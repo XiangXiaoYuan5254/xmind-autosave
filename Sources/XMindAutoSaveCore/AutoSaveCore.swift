@@ -10,7 +10,7 @@ public struct AutoSaveConfiguration: Codable, Sendable, Equatable {
     public init(
         monitoredFiles: [String],
         pollIntervalMilliseconds: Int = 200,
-        saveDelayMilliseconds: Int = 300,
+        saveDelayMilliseconds: Int = 1_200,
         retryMilliseconds: Int = 2_000,
         dirtyIndicators: [String] = ["已编辑", "Edited"]
     ) {
@@ -33,7 +33,7 @@ public struct AutoSaveConfiguration: Codable, Sendable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         monitoredFiles = try container.decode([String].self, forKey: .monitoredFiles)
         pollIntervalMilliseconds = try container.decodeIfPresent(Int.self, forKey: .pollIntervalMilliseconds) ?? 200
-        saveDelayMilliseconds = try container.decodeIfPresent(Int.self, forKey: .saveDelayMilliseconds) ?? 300
+        saveDelayMilliseconds = try container.decodeIfPresent(Int.self, forKey: .saveDelayMilliseconds) ?? 1_200
         retryMilliseconds = try container.decodeIfPresent(Int.self, forKey: .retryMilliseconds) ?? 2_000
         dirtyIndicators = try container.decodeIfPresent([String].self, forKey: .dirtyIndicators) ?? ["已编辑", "Edited"]
     }

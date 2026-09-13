@@ -26,7 +26,7 @@ func decodesDefaults() throws {
     let data = #"{"monitoredFiles":["/tmp/test.xmind"]}"#.data(using: .utf8)!
     let configuration = try JSONDecoder().decode(AutoSaveConfiguration.self, from: data)
     #expect(configuration.pollIntervalMilliseconds == 200)
-    #expect(configuration.saveDelayMilliseconds == 300)
+    #expect(configuration.saveDelayMilliseconds == 1_200)
     #expect(configuration.retryMilliseconds == 2_000)
 }
 

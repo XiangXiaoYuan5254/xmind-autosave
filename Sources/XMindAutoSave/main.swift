@@ -39,10 +39,14 @@ private struct ScanResult {
     let isDirty: Bool
     let windowFrame: CGRect
     let isFullScreen: Bool
+    let activitySignature: String
 }
 
 private struct SaveState {
     var dirtySince: Date?
+    var lastEditActivityAt: Date?
+    var observedInputGeneration = -1
+    var observedActivitySignature: String?
     var lastAttempt: Date?
     var lastSuccessfulSave: Date?
 }
@@ -63,6 +67,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var didRequestAccessibility = false
     private var lastStatusText = ""
     private let launchAtLoginController = LaunchAtLoginController()
+    private var globalEventMonitor: Any?
+    private var xmindInputGeneration = 0
+    private var lastXMindInputAt: Date?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -87,6 +94,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         timer?.invalidate()
+        if let globalEventMonitor {
+            NSEvent.removeMonitor(globalEventMonitor)
+            self.globalEventMonitor = nil
+        }
         overlayPanel?.hide()
     }
 
@@ -218,6 +229,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startMonitoring() {
         guard let configuration else { return }
+        installInputActivityMonitor()
         let interval = max(Double(configuration.pollIntervalMilliseconds) / 1_000.0, 0.1)
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -226,6 +238,22 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         timer?.tolerance = min(interval * 0.1, 0.02)
         poll()
+    }
+
+    private func installInputActivityMonitor() {
+        guard globalEventMonitor == nil else { return }
+
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { [weak self] _ in
+            guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier == xmindBundleIdentifier else {
+                return
+            }
+
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.xmindInputGeneration &+= 1
+                self.lastXMindInputAt = Date()
+            }
+        }
     }
 
     @objc private func checkNow() {
@@ -326,6 +354,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         guard scan.isDirty else {
             let justSaved = state.lastAttempt != nil && state.dirtySince != nil
             state.dirtySince = nil
+            state.lastEditActivityAt = nil
+            state.observedInputGeneration = xmindInputGeneration
+            state.observedActivitySignature = scan.activitySignature
             state.lastAttempt = nil
             if justSaved {
                 state.lastSuccessfulSave = now
@@ -345,9 +376,25 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             state.dirtySince = now
         }
 
+        if state.observedInputGeneration < 0 {
+            state.observedInputGeneration = xmindInputGeneration
+        } else if state.observedInputGeneration != xmindInputGeneration {
+            state.observedInputGeneration = xmindInputGeneration
+            state.lastEditActivityAt = lastXMindInputAt ?? now
+        }
+
+        if state.observedActivitySignature != scan.activitySignature {
+            state.observedActivitySignature = scan.activitySignature
+            state.lastEditActivityAt = now
+        }
+
+        if state.lastEditActivityAt == nil {
+            state.lastEditActivityAt = state.dirtySince ?? now
+        }
+
         let delay = max(Double(configuration.saveDelayMilliseconds) / 1_000.0, 0)
         let retry = max(Double(configuration.retryMilliseconds) / 1_000.0, 0.5)
-        let dirtyLongEnough = now.timeIntervalSince(state.dirtySince ?? now) >= delay
+        let dirtyLongEnough = now.timeIntervalSince(state.lastEditActivityAt ?? now) >= delay
         let mayRetry = state.lastAttempt.map { now.timeIntervalSince($0) >= retry } ?? true
 
         if forceSave || (dirtyLongEnough && mayRetry) {
@@ -409,6 +456,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard let matchedPath else { return nil }
+        let activitySignature = accumulatedTexts.joined(separator: "\u{1F}")
         return ScanResult(
             filePath: matchedPath,
             isDirty: XMindDocumentInspector.isDirty(
@@ -416,7 +464,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
                 indicators: configuration.dirtyIndicators
             ),
             windowFrame: windowFrame,
-            isFullScreen: isFullScreen
+            isFullScreen: isFullScreen,
+            activitySignature: activitySignature
         )
     }
 
