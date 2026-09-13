@@ -1,7 +1,7 @@
 {
   "monitoredFiles": [],
   "pollIntervalMilliseconds": 200,
-  "saveDelayMilliseconds": 300,
+  "saveDelayMilliseconds": 1200,
   "retryMilliseconds": 2000,
   "dirtyIndicators": [
     "已编辑",
