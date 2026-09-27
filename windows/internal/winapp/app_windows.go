@@ -439,11 +439,11 @@ func (a *App) documentFor(window uintptr, title string, now time.Time) *document
 func resolveDocument(window uintptr, title string) (path, method string, err error) {
 	path, accessibilityErr := documentPathFromAccessibility(window)
 	if accessibilityErr == nil {
-		return path, methodAccessibility, nil
+		return longPath(path), methodAccessibility, nil
 	}
 	path, recentErr := documentPathFromRecent(title)
 	if recentErr == nil {
-		return path, methodRecentShortcuts, nil
+		return longPath(path), methodRecentShortcuts, nil
 	}
 	return "", "", errors.Join(accessibilityErr, recentErr)
 }

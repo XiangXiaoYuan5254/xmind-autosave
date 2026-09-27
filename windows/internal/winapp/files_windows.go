@@ -45,7 +45,28 @@ func parentDirectory(path string) string {
 }
 
 func samePath(a, b string) bool {
-	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
+	return strings.EqualFold(longPath(a), longPath(b))
+}
+
+// longPath expands 8.3 short names (C:\Users\RUNNER~1\…) so that one file
+// always has one spelling. Paths that do not exist are only cleaned.
+func longPath(path string) string {
+	path = filepath.Clean(path)
+	name, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return path
+	}
+	buffer := make([]uint16, 512)
+	for {
+		length, err := syscall.GetLongPathName(name, &buffer[0], uint32(len(buffer)))
+		if err != nil || length == 0 {
+			return path
+		}
+		if int(length) < len(buffer) {
+			return syscall.UTF16ToString(buffer[:length])
+		}
+		buffer = make([]uint16, length) // too small: length is the size needed
+	}
 }
 
 func currentExecutable() string {
