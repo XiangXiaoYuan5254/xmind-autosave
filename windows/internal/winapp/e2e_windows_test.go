@@ -528,6 +528,19 @@ func TestE2EXMindAutoSave(t *testing.T) {
 	call(procSetForegroundWindow, window)
 	time.Sleep(time.Second)
 	e.screenshot("xmind-opened")
+
+	// The first document opens under a "Quick Start" tutorial that swallows
+	// keyboard shortcuts; its dark Continue button sits below the centre.
+	if bounds := windowBounds(window); true {
+		at := func(fx, fy float64) (int32, int32) {
+			return bounds.Left + int32(float64(bounds.width())*fx), bounds.Top + int32(float64(bounds.height())*fy)
+		}
+		if shot, err := grabScreen(); err == nil && shot.dark(at(0.469, 0.677)) {
+			clickAt(at(0.545, 0.690)) // Skip
+			time.Sleep(1500 * time.Millisecond)
+			e.screenshot("xmind-quick-start-skipped")
+		}
+	}
 	e.logWindows(xmindImage)
 	t.Logf("document window: %q", windowText(window))
 
