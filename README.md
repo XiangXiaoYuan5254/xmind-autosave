@@ -1,8 +1,8 @@
-# XMind Auto Save for macOS
+# XMind Auto Save
 
-给 XMind 本地文档补上接近实时的自动保存，并且每个文件都能独立开关。
+给 XMind 本地文档补上接近实时的自动保存，并且每个文件都能独立开关。支持 macOS；[Windows 版](#windows-版测试版)正在测试。
 
-[下载最新版 DMG](https://github.com/XiangXiaoYuan5254/xmind-autosave/releases/latest)
+[下载最新版](https://github.com/XiangXiaoYuan5254/xmind-autosave/releases/latest)：macOS 选 `XMindAutoSave-*.dmg`，Windows 选 `XMindAutoSave-Setup-*.exe`。
 
 ## 它能做什么
 
@@ -48,6 +48,29 @@
 
 也可以在“系统设置 → 通用 → 登录项”中移除或关闭它。
 
+## Windows 版（测试版）
+
+系统要求：Windows 10 1809 或更高版本、Windows 11（x64；ARM 设备通过系统自带的 x64 仿真运行）。
+
+1. 从 [Releases](https://github.com/XiangXiaoYuan5254/xmind-autosave/releases/latest) 下载 `XMindAutoSave-Setup-*.exe` 并双击运行。
+2. 如果出现“Windows 已保护你的电脑”，点“更多信息 → 仍要运行”。原因和 macOS 相同：当前没有代码签名证书。
+3. 程序会安装到 `%LOCALAPPDATA%\Programs\XMindAutoSave`（不需要管理员权限），在开始菜单添加“XMind 自动保存”，随后在任务栏右下角的通知区域运行（图标可能收在 `^` 里），并随 Windows 登录自动启动。
+4. 打开 XMind 本地文档，通过标题栏旁的“自动保存”开关为当前文件开启。
+
+单击通知区域的图标可以切换当前文件、立即保存、控制登录启动。开关设置保存在 `%APPDATA%\XMindAutoSave\preferences.json`。
+
+和 macOS 版的区别：
+
+- Windows 不允许向后台窗口发送快捷键，所以只在 XMind 位于前台时发送 `Ctrl+S`。编辑后不到 1.2 秒就切到别的程序时，会在回到 XMind 后补存。
+- 如果 XMind 的窗口标题带有“未保存”标记，就像 macOS 版一样以它为准；否则以你在 XMind 中的按键和点击为准（只用来计时，不记录按了什么）。对没有改动的本地文档按 `Ctrl+S` 不会产生任何影响。
+- 用中文输入法打拼音、还没上屏时不会保存，以免打断输入。
+
+程序同样不联网、不上传内容，只读取 XMind 窗口的辅助功能信息，并且只向 XMind 发送 `Ctrl+S`。
+
+识别不到当前文件或开关位置不对时，请单击通知区域图标 →“生成诊断报告”，检查后把 `diagnostics.txt` 附在 Issue 里。
+
+卸载：设置 → 应用 → 已安装的应用 → XMind 自动保存 → 卸载。
+
 ## 从源码构建
 
 项目是 SwiftPM 原生 macOS App：
@@ -65,8 +88,20 @@ swift test
 
 产物位于 `dist/release/`，可以直接上传到 GitHub Release。
 
+Windows 版用 Go 编写，在 macOS 上即可交叉编译（需要 Go 1.22+）：
+
+```bash
+./script/package_windows.sh 1.0.3
+```
+
+生成 `dist/release/XMindAutoSave-Setup-1.0.3.exe`。代码结构和调试方法见 [windows/README.md](windows/README.md)。
+
 ## 兼容性说明
 
-当前版本在 XMind 26.02 上验证。它依赖 XMind 的辅助功能界面来识别当前本地文档与“已编辑”状态；如果 XMind 以后大幅调整界面结构，可能需要同步适配。
+当前版本在 XMind 26.02 上验证。它依赖 XMind 的辅助功能界面来识别当前本地文档与“已编辑”状态；如果 XMind 以后大幅调整界面结构，可能需要同步适配。Windows 版尚未在真机上完成验证，识别方式见 [windows/README.md](windows/README.md)。
 
 本项目是独立的社区工具，与 XMind Ltd. 无隶属或官方合作关系；XMind 是其各自权利人的商标。
+
+## 许可证
+
+本项目基于 [MIT 许可证](LICENSE) 开源。© 2026 向小园

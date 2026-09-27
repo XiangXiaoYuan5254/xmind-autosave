@@ -1,0 +1,111 @@
+name: Windows
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "windows/**"
+      - "script/package_windows.sh"
+      - ".github/workflows/windows.yml"
+  pull_request:
+    paths:
+      - "windows/**"
+      - "script/package_windows.sh"
+      - ".github/workflows/windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: windows/go.mod
+          cache: false
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Unit and Win32 integration tests
+        run: go test -count=1 -v ./...
+
+      - name: Build
+        shell: bash
+        run: |
+          go install github.com/tc-hib/go-winres@v0.3.3
+          (
+            cd cmd/xmindautosave
+            "$(go env GOPATH)/bin/go-winres" make --in winres/winres.json --arch amd64 --out rsrc \
+              --product-version 0.0.0.0 --file-version 0.0.0.0
+          )
+          go build -trimpath -ldflags "-H windowsgui -s -w -X main.version=ci-${GITHUB_SHA::7}" \
+            -o ../dist/XMindAutoSave.exe ./cmd/xmindautosave
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: XMindAutoSave-windows-x64
+          path: dist/XMindAutoSave.exe
+
+  xmind:
+    name: End-to-end with XMind
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: windows/go.mod
+          cache: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: XMindAutoSave-windows-x64
+          path: dist
+
+      - name: Install the latest XMind
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $installer = Join-Path $env:RUNNER_TEMP 'xmind-setup.exe'
+          Invoke-WebRequest -Uri 'https://www.xmind.app/zen/download/win64/' -OutFile $installer
+          Start-Process -FilePath $installer -ArgumentList '/S' -Wait
+          $candidates = @(
+            "$env:LOCALAPPDATA\Programs\Xmind\Xmind.exe",
+            "$env:ProgramFiles\Xmind\Xmind.exe"
+          )
+          $xmind = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $xmind) {
+            $xmind = Get-ChildItem -Path "$env:LOCALAPPDATA\Programs", "$env:ProgramFiles" -Filter 'Xmind.exe' `
+              -Recurse -Depth 3 -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $xmind) { throw 'Xmind.exe not found after installation' }
+          (Get-Item $xmind).VersionInfo | Format-List ProductName, ProductVersion, FileName
+          "XMIND_EXE=$xmind" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: End-to-end tests
+        working-directory: windows
+        env:
+          XMIND_AUTOSAVE_EXE: ${{ github.workspace }}\dist\XMindAutoSave.exe
+          E2E_ARTIFACTS: ${{ runner.temp }}\e2e
+        run: go test -tags e2e -run E2E -count=1 -v -timeout 20m ./internal/winapp/
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshots-and-logs
+          path: ${{ runner.temp }}\e2e
+          if-no-files-found: warn
