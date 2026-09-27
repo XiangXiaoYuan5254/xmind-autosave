@@ -40,8 +40,27 @@ const (
 
 var (
 	procBitBlt       = gdi32.NewProc("BitBlt")
+	procGetPixel     = gdi32.NewProc("GetPixel")
 	procSetCursorPos = user32.NewProc("SetCursorPos")
 )
+
+// isDark reports whether most pixels around (x, y) on screen are dark, e.g.
+// a filled button or a ticked checkbox.
+func isDark(x, y int32) bool {
+	screen := call(procGetDC, 0)
+	defer call(procReleaseDC, 0, screen)
+	dark := 0
+	for dy := int32(-4); dy <= 4; dy += 4 {
+		for dx := int32(-4); dx <= 4; dx += 4 {
+			color := uint32(call(procGetPixel, screen, uintptr(x+dx), uintptr(y+dy)))
+			r, g, b := color&0xFF, color>>8&0xFF, color>>16&0xFF
+			if 299*r+587*g+114*b < 110*1000 {
+				dark++
+			}
+		}
+	}
+	return dark >= 5
+}
 
 type mouseInput struct {
 	Type      uint32
@@ -411,9 +430,11 @@ func TestE2EXMindAutoSave(t *testing.T) {
 				return true
 			}
 		}
-		// The first launch shows "What's New" in a 680×546 window whose main
-		// button ("Continue") sits near the bottom centre.
-		if time.Since(lastDismiss) > 8*time.Second {
+		// The first launch walks through two screens in a 680×546 window:
+		// "What's New" (Continue) and the license agreement (Agree). The
+		// repository owner agreed to accepting XMind's license on these
+		// throwaway runners; usage statistics are switched off first.
+		if time.Since(lastDismiss) > 6*time.Second {
 			for _, hwnd := range windowsOfProcess(xmindImage) {
 				bounds := windowBounds(hwnd)
 				if bounds.width() < 600 || bounds.width() > 780 || bounds.height() < 460 || bounds.height() > 640 {
@@ -422,10 +443,26 @@ func TestE2EXMindAutoSave(t *testing.T) {
 				lastDismiss = time.Now()
 				call(procSetForegroundWindow, hwnd)
 				time.Sleep(500 * time.Millisecond)
-				e.screenshot("xmind-dialog")
-				clickAt(bounds.Left+bounds.width()/2, bounds.Top+bounds.height()*872/1000)
+				at := func(fx, fy float64) (int32, int32) {
+					return bounds.Left + int32(float64(bounds.width())*fx), bounds.Top + int32(float64(bounds.height())*fy)
+				}
+				switch {
+				case isDark(at(0.793, 0.947)):
+					e.screenshot("xmind-license")
+					if isDark(at(0.065, 0.813)) {
+						clickAt(at(0.065, 0.813)) // untick "Automatically send usage statistics"
+						time.Sleep(400 * time.Millisecond)
+					}
+					e.screenshot("xmind-license-statistics-off")
+					clickAt(at(0.793, 0.947)) // Agree
+				case isDark(at(0.5, 0.872)):
+					e.screenshot("xmind-whats-new")
+					clickAt(at(0.5, 0.872)) // Continue
+				default:
+					e.screenshot("xmind-unknown-dialog")
+				}
 				time.Sleep(2 * time.Second)
-				e.screenshot("xmind-dialog-clicked")
+				e.screenshot("xmind-after-dialog")
 				e.logWindows(xmindImage)
 			}
 		}
