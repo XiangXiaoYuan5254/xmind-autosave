@@ -139,8 +139,18 @@ func (o *comObject) requestWebAccessibility() {
 	hr := provider.call(serviceProviderQueryService,
 		uintptr(unsafe.Pointer(&iidIAccessible2)), uintptr(unsafe.Pointer(&iidIAccessible2)),
 		uintptr(unsafe.Pointer(&accessible2)))
-	if !failed(hr) && accessible2 != nil {
-		accessible2.release()
+	if failed(hr) || accessible2 == nil {
+		return
+	}
+	defer accessible2.release()
+	// Newer Chromium versions only count IAccessible2-specific calls as a
+	// sign of assistive technology, so make two cheap ones.
+	const accessible2Role, accessible2Attributes = 31, 45
+	var role int32
+	accessible2.call(accessible2Role, uintptr(unsafe.Pointer(&role)))
+	var attributes *uint16
+	if hr := accessible2.call(accessible2Attributes, uintptr(unsafe.Pointer(&attributes))); !failed(hr) {
+		takeBSTR(attributes)
 	}
 }
 
