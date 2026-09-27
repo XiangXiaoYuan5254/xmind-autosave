@@ -1,1 +1,2 @@
 86c9394626c4a7452c77f7444014fa754f085024cdcc8d947e2ccee5ca4da9d4  XMindAutoSave-1.0.3.dmg
+6fd07a1cdffaf1bd2e93b26336e391db524ff1507bc85b49e2ecde39f5ae77c4  XMindAutoSave-Setup-1.0.3.exe

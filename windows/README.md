@@ -31,7 +31,7 @@ go run ./cmd/xmindautosave --portable
 | 环节 | 做法 |
 | --- | --- |
 | 找到 XMind | 前台窗口所属进程名在 `processNames` 中（默认 `Xmind.exe`，不区分大小写） |
-| 识别当前文件 | 优先读取 XMind 编辑页的辅助功能（MSAA）信息：Chromium 把文档 URL 作为 document 的值公开，其中 `source=` 就是本地路径，与 macOS 版读取的 URL 相同。读不到时，用窗口标题匹配“最近使用”文件夹里的 `.xmind` 快捷方式 |
+| 识别当前文件 | 优先读取 XMind 编辑页的辅助功能（MSAA）信息：Chromium 把文档 URL 作为 document 的值公开，其中 `source=` 就是本地路径，与 macOS 版读取的 URL 相同。Chromium 只有在客户端调用过 IAccessible2 后才构建网页内容的辅助功能树，所以读取前会先调用一次（相当于 macOS 版设置 `AXManualAccessibility`）。读不到时，用窗口标题匹配“最近使用”文件夹里的 `.xmind` 快捷方式 |
 | 判断有编辑 | 标题中出现 `dirtyIndicators`（默认 `已编辑`、`Edited`、`*`）时以它为准，与 macOS 版一致；从未出现过时，以在 XMind 中的按键和鼠标松开为准 |
 | 保存时机 | 每次输入重新计时，停止约 1.2 秒后发送一次 `Ctrl+S`；XMind 不在前台、按着修饰键或鼠标、XMind 正显示菜单、中文输入法可能正在组字时都会等待 |
 | 确认保存 | 文件修改时间变化，或标题的未保存标记消失 |

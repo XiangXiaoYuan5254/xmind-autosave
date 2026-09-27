@@ -8,7 +8,7 @@ website/
 ├── styles.css          样式（自动适配浅色 / 深色模式）
 ├── main.js             首屏演示动画、交互演示、复制按钮
 ├── assets/             图标、favicon、分享预览图 og.png
-└── downloads/          DMG 安装包与 SHA256SUMS.txt
+└── downloads/          DMG、Windows 安装程序与 SHA256SUMS.txt
 ```
 
 ## 本地预览
@@ -25,17 +25,18 @@ python3 -m http.server 8080 -d website
 
 ```bash
 ./script/package_release.sh 1.0.4
+./script/package_windows.sh 1.0.4
 ./script/sync_website_release.sh 1.0.4
 ```
 
 同步脚本会：
 
-- 把 `dist/release/` 里对应版本的 DMG 复制到 `website/downloads/`，并删除旧版本；
+- 把 `dist/release/` 里对应版本的 DMG 和 Windows 安装程序（`XMindAutoSave-Setup-*.exe`，没有就跳过）复制到 `website/downloads/`，并删除旧版本；
 - 重新生成 `website/downloads/SHA256SUMS.txt`；
 - 更新页面上的版本号、下载链接、文件大小和发布日期；
 - 从 `CHANGELOG.md` 的 `## 1.0.4` 小节读取条目，替换“最近更新”。
 
-Windows 版目前在下载区显示为“即将推出”。发布后，按 `index.html` 里下载按钮旁的注释把占位按钮换成真正的下载链接。
+页面会根据访客的系统切换首屏下载按钮、快捷键写法（⌘S / Ctrl S）和默认展示的安装步骤；不支持脚本时默认展示 macOS。
 
 省略版本号时，自动使用 `dist/release/` 里版本最高的 DMG。
 

@@ -10,6 +10,23 @@
   // 与 App 的 saveDelayMilliseconds 保持一致
   const SAVE_DELAY = 1200;
 
+  /* ---------- Windows 访客：下载按钮、快捷键和安装步骤换成 Windows 的 ---------- */
+  const IS_WINDOWS = /windows/i.test(navigator.userAgentData?.platform || navigator.userAgent);
+  const SAVE_KEYS = IS_WINDOWS ? 'Ctrl S' : '⌘S';
+  if (IS_WINDOWS) {
+    document.documentElement.dataset.platform = 'windows';
+    for (const key of $$('[data-mod-key]')) key.textContent = 'Ctrl';
+    for (const keys of $$('[data-save-keys]')) keys.textContent = 'Ctrl+S';
+    const heroDownload = $('[data-hero-download]');
+    const windowsDownload = $('[data-download-windows]');
+    if (heroDownload && windowsDownload) {
+      heroDownload.href = windowsDownload.getAttribute('href');
+      $('[data-hero-download-label]', heroDownload).textContent = '免费下载 Windows 版';
+    }
+    const windowsSteps = $('#install-windows');
+    if (windowsSteps) windowsSteps.checked = true;
+  }
+
   /* ---------- 导航滚动状态 ---------- */
   const nav = $('[data-nav]');
   const syncNav = () => nav.classList.toggle('is-scrolled', window.scrollY > 8);
@@ -482,14 +499,15 @@
         ctx.lineTo(x, H - 14);
         ctx.stroke();
         ctx.setLineDash([]);
+        ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif';
+        const pillWidth = Math.max(44, Math.ceil(ctx.measureText(SAVE_KEYS).width) + 20);
         ctx.fillStyle = colors.brand;
-        pill(x - 22, 16, 44, 26, 13);
+        pill(x - pillWidth / 2, 16, pillWidth, 26, 13);
         ctx.fill();
         ctx.fillStyle = '#ffffff';
-        ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('⌘S', x, 29.5);
+        ctx.fillText(SAVE_KEYS, x, 29.5);
       }
 
       // “现在”
@@ -596,7 +614,7 @@
         try { copied = legacyCopy(text); } catch { copied = false; }
       }
       if (!copied) {
-        // 选中文本，方便直接按 ⌘C
+        // 选中文本，方便直接复制
         const target = button.closest('.terminal')?.querySelector('pre');
         if (target) {
           const range = document.createRange();
@@ -606,7 +624,7 @@
           selection.addRange(range);
         }
       }
-      showToast(copied ? '已复制到剪贴板' : '已选中，按 ⌘C 复制');
+      showToast(copied ? '已复制到剪贴板' : `已选中，按 ${IS_WINDOWS ? 'Ctrl+C' : '⌘C'} 复制`);
     });
   }
 

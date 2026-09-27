@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 把 dist/release 中的 DMG 同步到官网 website/downloads/，
-# 并更新页面上的版本号、下载链接、文件大小、发布日期和“最近更新”。
+# 把 dist/release 中的 DMG（以及同版本的 Windows 安装程序，如果有）同步到
+# 官网 website/downloads/，并更新页面上的版本号、下载链接、文件大小、发布日期
+# 和“最近更新”。
 #
 # 用法：./script/sync_website_release.sh [版本号]
 # 省略版本号时，使用 dist/release 中版本最高的 DMG。
@@ -44,6 +45,13 @@ if [[ ! -f "$DMG_SOURCE" ]]; then
   exit 1
 fi
 
+EXE_NAME="$APP_NAME-Setup-$VERSION.exe"
+EXE_SOURCE="$RELEASE_DIR/$EXE_NAME"
+if [[ ! -f "$EXE_SOURCE" ]]; then
+  echo "提示：没有 $EXE_NAME（./script/package_windows.sh $VERSION 可以生成），官网上的 Windows 版保持不变。" >&2
+  EXE_SOURCE=""
+fi
+
 # 与 Finder 一致，按 1000 进位显示大小
 human_size() {
   awk -v bytes="$1" 'BEGIN {
@@ -55,12 +63,21 @@ human_size() {
 mkdir -p "$DOWNLOAD_DIR"
 find "$DOWNLOAD_DIR" -maxdepth 1 -type f \( -name "$APP_NAME-*.dmg" -o -name "$APP_NAME-*.zip" \) -delete
 cp "$DMG_SOURCE" "$DOWNLOAD_DIR/"
+if [[ -n "$EXE_SOURCE" ]]; then
+  find "$DOWNLOAD_DIR" -maxdepth 1 -type f -name "$APP_NAME-Setup-*.exe" -delete
+  cp "$EXE_SOURCE" "$DOWNLOAD_DIR/"
+fi
 (
   cd "$DOWNLOAD_DIR"
-  shasum -a 256 "$DMG_NAME" >SHA256SUMS.txt
+  shopt -s nullglob
+  shasum -a 256 "$DMG_NAME" "$APP_NAME"-Setup-*.exe >SHA256SUMS.txt
 )
 
 DMG_SIZE="$(human_size "$(stat -f %z "$DMG_SOURCE")")"
+EXE_SIZE=""
+if [[ -n "$EXE_SOURCE" ]]; then
+  EXE_SIZE="$(human_size "$(stat -f %z "$EXE_SOURCE")")"
+fi
 RELEASE_DATE="$(stat -f %Sm -t %Y-%m-%d "$DMG_SOURCE")"
 
 # 从 CHANGELOG.md 中取出该版本的条目
@@ -82,9 +99,13 @@ if [[ -z "$RELEASE_NOTES" ]]; then
   echo "提示：CHANGELOG.md 中没有 “## $VERSION” 的条目，页面上的“最近更新”保持不变。" >&2
 fi
 
-VERSION="$VERSION" DMG_SIZE="$DMG_SIZE" RELEASE_DATE="$RELEASE_DATE" RELEASE_NOTES="$RELEASE_NOTES" \
+VERSION="$VERSION" DMG_SIZE="$DMG_SIZE" EXE_SIZE="$EXE_SIZE" RELEASE_DATE="$RELEASE_DATE" RELEASE_NOTES="$RELEASE_NOTES" \
 perl -0pi -e '
   s/\Q'"$APP_NAME"'\E-\d+\.\d+\.\d+\.dmg/'"$APP_NAME"'-$ENV{VERSION}.dmg/g;
+  if (length $ENV{EXE_SIZE}) {
+    s/\Q'"$APP_NAME"'\E-Setup-\d+\.\d+\.\d+\.exe/'"$APP_NAME"'-Setup-$ENV{VERSION}.exe/g;
+    s/(data-release-exe-size>)[^<]*/$1$ENV{EXE_SIZE}/g;
+  }
   s/(data-release-version>)[^<]*/$1$ENV{VERSION}/g;
   s/(data-release-dmg-size>)[^<]*/$1$ENV{DMG_SIZE}/g;
   s/(data-release-date>)[^<]*/$1$ENV{RELEASE_DATE}/g;
@@ -92,4 +113,4 @@ perl -0pi -e '
   s/(<!-- release-notes:start -->\n).*?(<!-- release-notes:end -->)/$1$ENV{RELEASE_NOTES}\n$2/s if length $ENV{RELEASE_NOTES};
 ' "$INDEX_HTML"
 
-echo "官网已同步到 $VERSION（$DMG_SIZE，$RELEASE_DATE）"
+echo "官网已同步到 $VERSION（DMG $DMG_SIZE${EXE_SIZE:+，Windows $EXE_SIZE}，$RELEASE_DATE）"

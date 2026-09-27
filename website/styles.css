@@ -889,6 +889,52 @@ button.switch { cursor: pointer; }
 .note strong { font-size: 15.5px; }
 .note p { margin-top: 6px; font-size: 15px; line-height: 1.8; color: var(--ink-2); }
 
+/* 安装步骤的 macOS / Windows 切换：单选框放在面板前面，不依赖脚本 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.segmented {
+  display: inline-flex;
+  gap: 4px;
+  margin-top: 48px;
+  padding: 4px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg-tint);
+}
+.segmented label {
+  padding: 8px 22px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.segmented label:hover { color: var(--ink); }
+#install-mac:checked ~ .segmented label[for="install-mac"],
+#install-windows:checked ~ .segmented label[for="install-windows"] {
+  background: var(--bg-elev);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+#install-mac:focus-visible ~ .segmented label[for="install-mac"],
+#install-windows:focus-visible ~ .segmented label[for="install-windows"] {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+#install-mac:checked ~ [data-platform-panel="windows"],
+#install-windows:checked ~ [data-platform-panel="mac"] { display: none; }
+.install-panel .install { margin-top: 28px; }
+
 /* ---------- 下载 ---------- */
 .dl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 64px; }
 .dl-card { display: flex; flex-direction: column; padding: 38px; border-radius: 30px; }
