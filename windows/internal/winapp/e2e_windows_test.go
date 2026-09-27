@@ -663,4 +663,22 @@ func TestE2EXMindAutoSave(t *testing.T) {
 	if !strings.Contains(documentContent(document), "debounce") {
 		t.Errorf("saved document does not contain the typed text")
 	}
+
+	// 6. Input that changes nothing (moving the selection) still sends
+	// Ctrl+S, which must leave an unchanged document alone.
+	time.Sleep(3 * time.Second)
+	unchanged := fileModTime(document)
+	navigated := time.Now()
+	const vkRight = 0x27
+	pressKey(vkRight)
+	time.Sleep(4 * time.Second)
+	if countBetween(saveCommands(), navigated, time.Now()) == 0 {
+		t.Errorf("no Ctrl+S after navigating")
+	}
+	if !fileModTime(document).Equal(unchanged) {
+		t.Errorf("Ctrl+S rewrote an unchanged document")
+	} else {
+		t.Logf("Ctrl+S on an unchanged document left the file untouched")
+	}
+	e.screenshot("after-navigation")
 }
