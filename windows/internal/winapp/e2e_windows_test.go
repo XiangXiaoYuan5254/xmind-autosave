@@ -40,26 +40,32 @@ const (
 
 var (
 	procBitBlt       = gdi32.NewProc("BitBlt")
-	procGetPixel     = gdi32.NewProc("GetPixel")
 	procSetCursorPos = user32.NewProc("SetCursorPos")
 )
 
-// isDark reports whether most pixels around (x, y) on screen are dark, e.g.
-// a filled button or a ticked checkbox.
-func isDark(x, y int32) bool {
-	screen := call(procGetDC, 0)
-	defer call(procReleaseDC, 0, screen)
-	dark := 0
-	for dy := int32(-4); dy <= 4; dy += 4 {
-		for dx := int32(-4); dx <= 4; dx += 4 {
-			color := uint32(call(procGetPixel, screen, uintptr(x+dx), uintptr(y+dy)))
-			r, g, b := color&0xFF, color>>8&0xFF, color>>16&0xFF
-			if 299*r+587*g+114*b < 110*1000 {
-				dark++
-			}
+// screenShot is one capture of the virtual screen, used both for saved
+// screenshots and for recognising XMind's first-run screens.
+type screenShot struct {
+	image  *image.RGBA
+	origin image.Point
+}
+
+// luminance averages a 5×5 patch around (x, y) in screen coordinates.
+func (s screenShot) luminance(x, y int32) int {
+	total, count := 0, 0
+	for dy := -2; dy <= 2; dy++ {
+		for dx := -2; dx <= 2; dx++ {
+			c := s.image.RGBAAt(int(x)-s.origin.X+dx, int(y)-s.origin.Y+dy)
+			total += (299*int(c.R) + 587*int(c.G) + 114*int(c.B)) / 1000
+			count++
 		}
 	}
-	return dark >= 5
+	return total / count
+}
+
+// dark is true for filled buttons and ticked checkboxes.
+func (s screenShot) dark(x, y int32) bool {
+	return s.luminance(x, y) < 110
 }
 
 type mouseInput struct {
@@ -174,7 +180,7 @@ func typeText(text string) {
 	}
 }
 
-func captureScreen(path string) error {
+func grabScreen() (screenShot, error) {
 	const (
 		smXVirtualScreen  = 76
 		smYVirtualScreen  = 77
@@ -188,7 +194,7 @@ func captureScreen(path string) error {
 	width := int32(call(procGetSystemMetrics, smCxVirtualScreen))
 	height := int32(call(procGetSystemMetrics, smCyVirtualScreen))
 	if width <= 0 || height <= 0 {
-		return fmt.Errorf("no screen (%dx%d)", width, height)
+		return screenShot{}, fmt.Errorf("no screen (%dx%d)", width, height)
 	}
 
 	screen := call(procGetDC, 0)
@@ -200,13 +206,13 @@ func captureScreen(path string) error {
 	var pixels unsafe.Pointer
 	bitmap := call(procCreateDIBSection, memory, uintptr(unsafe.Pointer(&info)), 0, uintptr(unsafe.Pointer(&pixels)), 0, 0)
 	if bitmap == 0 || pixels == nil {
-		return fmt.Errorf("CreateDIBSection failed")
+		return screenShot{}, fmt.Errorf("CreateDIBSection failed")
 	}
 	defer call(procDeleteObject, bitmap)
 	previous := call(procSelectObject, memory, bitmap)
 	defer call(procSelectObject, memory, previous)
 	if call(procBitBlt, memory, 0, 0, uintptr(width), uintptr(height), screen, uintptr(left), uintptr(top), srcCopy|captureBlt) == 0 {
-		return fmt.Errorf("BitBlt failed")
+		return screenShot{}, fmt.Errorf("BitBlt failed")
 	}
 
 	source := unsafe.Slice((*byte)(pixels), int(width)*int(height)*4)
@@ -217,12 +223,20 @@ func captureScreen(path string) error {
 		img.Pix[index+2] = source[index]
 		img.Pix[index+3] = 255
 	}
+	return screenShot{image: img, origin: image.Point{X: int(left), Y: int(top)}}, nil
+}
+
+func captureScreen(path string) error {
+	shot, err := grabScreen()
+	if err != nil {
+		return err
+	}
 	file, err := os.Create(path)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-	return png.Encode(file, img)
+	return png.Encode(file, shot.image)
 }
 
 // writeXMindFixture writes a minimal XMind document with one sheet.
@@ -446,8 +460,17 @@ func TestE2EXMindAutoSave(t *testing.T) {
 				at := func(fx, fy float64) (int32, int32) {
 					return bounds.Left + int32(float64(bounds.width())*fx), bounds.Top + int32(float64(bounds.height())*fy)
 				}
+				shot, err := grabScreen()
+				if err != nil {
+					t.Logf("screen capture failed: %v", err)
+					continue
+				}
+				isDark := func(x, y int32) bool { return shot.dark(x, y) }
+				// Sample inside each button but beside its white label.
+				t.Logf("dialog brightness: agree=%d continue=%d statistics=%d",
+					shot.luminance(at(0.757, 0.947)), shot.luminance(at(0.335, 0.872)), shot.luminance(at(0.065, 0.813)))
 				switch {
-				case isDark(at(0.793, 0.947)):
+				case isDark(at(0.757, 0.947)):
 					e.screenshot("xmind-license")
 					if isDark(at(0.065, 0.813)) {
 						clickAt(at(0.065, 0.813)) // untick "Automatically send usage statistics"
@@ -455,7 +478,7 @@ func TestE2EXMindAutoSave(t *testing.T) {
 					}
 					e.screenshot("xmind-license-statistics-off")
 					clickAt(at(0.793, 0.947)) // Agree
-				case isDark(at(0.5, 0.872)):
+				case isDark(at(0.335, 0.872)):
 					e.screenshot("xmind-whats-new")
 					clickAt(at(0.5, 0.872)) // Continue
 				default:
