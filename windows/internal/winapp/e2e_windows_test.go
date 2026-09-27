@@ -63,6 +63,17 @@ func (s screenShot) luminance(x, y int32) int {
 	return total / count
 }
 
+// color averages a 5×5 patch around (x, y) in screen coordinates.
+func (s screenShot) color(x, y int32) (r, g, b int) {
+	for dy := -2; dy <= 2; dy++ {
+		for dx := -2; dx <= 2; dx++ {
+			c := s.image.RGBAAt(int(x)-s.origin.X+dx, int(y)-s.origin.Y+dy)
+			r, g, b = r+int(c.R), g+int(c.G), b+int(c.B)
+		}
+	}
+	return r / 25, g / 25, b / 25
+}
+
 // dark is true for filled buttons and ticked checkboxes.
 func (s screenShot) dark(x, y int32) bool {
 	return s.luminance(x, y) < 110
@@ -444,8 +455,9 @@ func TestE2EXMindAutoSave(t *testing.T) {
 				return true
 			}
 		}
-		// The first launch walks through two screens in a 680×546 window:
-		// "What's New" (Continue) and the license agreement (Agree). The
+		// The first launch walks through three screens in a 680×546 window:
+		// "What's New" (Continue), the license agreement (Agree) and
+		// "Sign in to Xmind", which is closed without signing in. The
 		// repository owner agreed to accepting XMind's license on these
 		// throwaway runners; usage statistics are switched off first.
 		if time.Since(lastDismiss) > 6*time.Second {
@@ -469,7 +481,11 @@ func TestE2EXMindAutoSave(t *testing.T) {
 				// Sample inside each button but beside its white label.
 				t.Logf("dialog brightness: agree=%d continue=%d statistics=%d",
 					shot.luminance(at(0.757, 0.947)), shot.luminance(at(0.335, 0.872)), shot.luminance(at(0.065, 0.813)))
+				signInRed, signInGreen, signInBlue := shot.color(at(0.26, 0.621))
 				switch {
+				case signInRed > 230 && signInGreen > 130 && signInGreen < 200 && signInBlue > 110 && signInBlue < 180:
+					e.screenshot("xmind-sign-in")
+					clickAt(at(0.965, 0.02)) // close (×), no account is used
 				case isDark(at(0.757, 0.947)):
 					e.screenshot("xmind-license")
 					if isDark(at(0.065, 0.813)) {
