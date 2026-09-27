@@ -531,7 +531,8 @@ func TestE2EXMindAutoSave(t *testing.T) {
 
 	// The first document opens under a "Quick Start" tutorial that swallows
 	// keyboard shortcuts; its dark Continue button sits below the centre.
-	if bounds := windowBounds(window); true {
+	{
+		bounds := windowBounds(window)
 		at := func(fx, fy float64) (int32, int32) {
 			return bounds.Left + int32(float64(bounds.width())*fx), bounds.Top + int32(float64(bounds.height())*fy)
 		}
@@ -639,8 +640,8 @@ func TestE2EXMindAutoSave(t *testing.T) {
 	pressKey(vkTab)
 	time.Sleep(600 * time.Millisecond)
 	typingStarted := time.Now()
-	for _, letter := range "debounce" {
-		typeText(string(letter))
+	for _, letter := range "DEBOUNCE" { // real key presses, like a keyboard
+		pressKey(uint16(letter))
 		time.Sleep(400 * time.Millisecond)
 	}
 	pressKey(vkReturn)

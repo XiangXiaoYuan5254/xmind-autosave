@@ -25,23 +25,22 @@ const (
 
 // Virtual-key codes.
 const (
-	vkLButton  = 0x01
-	vkRButton  = 0x02
-	vkMButton  = 0x04
-	vkShift    = 0x10
-	vkControl  = 0x11
-	vkMenu     = 0x12
-	vkCapital  = 0x14
-	vkLWin     = 0x5B
-	vkRWin     = 0x5C
-	vkNumLock  = 0x90
-	vkScroll   = 0x91
-	vkLShift   = 0xA0
-	vkRMenu    = 0xA5
-	vkS        = 0x53
-	vkA        = 0x41
-	vkZ        = 0x5A
-	vkReserved = 0xFF
+	vkLButton = 0x01
+	vkRButton = 0x02
+	vkMButton = 0x04
+	vkShift   = 0x10
+	vkControl = 0x11
+	vkMenu    = 0x12
+	vkCapital = 0x14
+	vkLWin    = 0x5B
+	vkRWin    = 0x5C
+	vkNumLock = 0x90
+	vkScroll  = 0x91
+	vkLShift  = 0xA0
+	vkRMenu   = 0xA5
+	vkS       = 0x53
+	vkA       = 0x41
+	vkZ       = 0x5A
 )
 
 type rawInputDevice struct {
@@ -106,9 +105,12 @@ func readRawInput(handle uintptr) (rawInputEvent, bool) {
 	return rawInputEvent{}, false
 }
 
+// isModifierKey is true for keys that never edit anything on their own.
+// Keys without a usable code (0, 0xFF, VK_PACKET) still count as typing:
+// on-screen keyboards, dictation and other text-injecting tools produce them.
 func isModifierKey(virtualKey uint16) bool {
 	switch virtualKey {
-	case vkShift, vkControl, vkMenu, vkLWin, vkRWin, vkCapital, vkNumLock, vkScroll, vkReserved, 0:
+	case vkShift, vkControl, vkMenu, vkLWin, vkRWin, vkCapital, vkNumLock, vkScroll:
 		return true
 	}
 	return virtualKey >= vkLShift && virtualKey <= vkRMenu
