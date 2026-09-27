@@ -38,7 +38,28 @@ const (
 	vkReturn = 0x0D
 )
 
-var procBitBlt = gdi32.NewProc("BitBlt")
+var (
+	procBitBlt       = gdi32.NewProc("BitBlt")
+	procSetCursorPos = user32.NewProc("SetCursorPos")
+)
+
+type mouseInput struct {
+	Type      uint32
+	_         uint32
+	DX, DY    int32
+	MouseData uint32
+	Flags     uint32
+	Time      uint32
+	ExtraInfo uintptr
+}
+
+func clickAt(x, y int32) {
+	const inputMouse, leftDown, leftUp = 0, 0x0002, 0x0004
+	call(procSetCursorPos, uintptr(x), uintptr(y))
+	time.Sleep(150 * time.Millisecond)
+	inputs := [2]mouseInput{{Type: inputMouse, Flags: leftDown}, {Type: inputMouse, Flags: leftUp}}
+	call(procSendInput, uintptr(len(inputs)), uintptr(unsafe.Pointer(&inputs[0])), unsafe.Sizeof(inputs[0]))
+}
 
 type e2eRun struct {
 	t         *testing.T
@@ -382,13 +403,38 @@ func TestE2EXMindAutoSave(t *testing.T) {
 
 	var window uintptr
 	started := time.Now()
-	lastShot := started
-	found := waitUntil(180*time.Second, 2*time.Second, func() bool {
+	lastShot, lastOpen, lastDismiss := started, started, time.Time{}
+	found := waitUntil(240*time.Second, 2*time.Second, func() bool {
 		for _, hwnd := range windowsOfProcess(xmindImage) {
 			if strings.Contains(windowText(hwnd), stem) {
 				window = hwnd
 				return true
 			}
+		}
+		// The first launch shows "What's New" in a 680×546 window whose main
+		// button ("Continue") sits near the bottom centre.
+		if time.Since(lastDismiss) > 8*time.Second {
+			for _, hwnd := range windowsOfProcess(xmindImage) {
+				bounds := windowBounds(hwnd)
+				if bounds.width() < 600 || bounds.width() > 780 || bounds.height() < 460 || bounds.height() > 640 {
+					continue
+				}
+				lastDismiss = time.Now()
+				call(procSetForegroundWindow, hwnd)
+				time.Sleep(500 * time.Millisecond)
+				e.screenshot("xmind-dialog")
+				clickAt(bounds.Left+bounds.width()/2, bounds.Top+bounds.height()*872/1000)
+				time.Sleep(2 * time.Second)
+				e.screenshot("xmind-dialog-clicked")
+				e.logWindows(xmindImage)
+			}
+		}
+		// XMind may drop the file it was launched with while onboarding;
+		// asking the running instance again opens it.
+		if time.Since(lastOpen) > 25*time.Second {
+			lastOpen = time.Now()
+			t.Logf("asking XMind to open the document again")
+			_ = exec.Command(xmindExe, document).Start()
 		}
 		if time.Since(lastShot) > 20*time.Second {
 			lastShot = time.Now()

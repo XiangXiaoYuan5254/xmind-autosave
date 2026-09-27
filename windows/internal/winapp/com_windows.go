@@ -117,6 +117,33 @@ const (
 	roleDocument     = 0x0F
 )
 
+var (
+	iidServiceProvider = guid{0x6D5140C1, 0x7436, 0x11CE, [8]byte{0x80, 0x34, 0x00, 0xAA, 0x00, 0x60, 0x09, 0xFA}}
+	iidIAccessible2    = guid{0xE89F726E, 0xC4F4, 0x4C19, [8]byte{0xBB, 0x19, 0xB6, 0x47, 0xD7, 0xFA, 0x84, 0x78}}
+)
+
+// requestWebAccessibility asks for the IAccessible2 interface, the way screen
+// readers announce themselves. Chromium — and so Electron apps like XMind —
+// only builds the accessibility tree of web content, document URL included,
+// after that; plain MSAA calls see an empty document. It is the Windows
+// counterpart of setting AXManualAccessibility in the macOS version.
+func (o *comObject) requestWebAccessibility() {
+	o.accessibleString(accName) // some Chromium versions switch on basic support here
+	provider, err := o.queryInterface(&iidServiceProvider)
+	if err != nil {
+		return
+	}
+	defer provider.release()
+	const serviceProviderQueryService = 3
+	var accessible2 *comObject
+	hr := provider.call(serviceProviderQueryService,
+		uintptr(unsafe.Pointer(&iidIAccessible2)), uintptr(unsafe.Pointer(&iidIAccessible2)),
+		uintptr(unsafe.Pointer(&accessible2)))
+	if !failed(hr) && accessible2 != nil {
+		accessible2.release()
+	}
+}
+
 func accessibleFromWindow(hwnd uintptr) (*comObject, error) {
 	var result *comObject
 	hr := call(procAccessibleObjectFromWindow, hwnd, objidClient,

@@ -86,6 +86,9 @@ func accessibleRoots(hwnd uintptr) []*comObject {
 	if root, err := accessibleFromWindow(hwnd); err == nil {
 		roots = append(roots, root)
 	}
+	for _, root := range roots {
+		root.requestWebAccessibility()
+	}
 	return roots
 }
 
