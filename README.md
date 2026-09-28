@@ -96,7 +96,7 @@ swift test
 生成同时支持 Apple 芯片与 Intel 的 DMG：
 
 ```bash
-./script/package_release.sh 1.0.3
+./script/package_release.sh 1.0.4
 ```
 
 产物位于 `dist/release/`，可以直接上传到 GitHub Release。
@@ -104,10 +104,10 @@ swift test
 Windows 版用 Go 编写，在 macOS 上即可交叉编译（需要 Go 1.22+）：
 
 ```bash
-./script/package_windows.sh 1.0.3
+./script/package_windows.sh 1.0.4
 ```
 
-生成 `dist/release/XMindAutoSave-Setup-1.0.3.exe`。代码结构和调试方法见 [windows/README.md](windows/README.md)。
+生成 `dist/release/XMindAutoSave-Setup-1.0.4.exe`。代码结构和调试方法见 [windows/README.md](windows/README.md)。
 
 ## 兼容性说明
 
