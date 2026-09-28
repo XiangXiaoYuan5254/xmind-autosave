@@ -67,6 +67,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var didRequestAccessibility = false
     private var lastStatusText = ""
     private let launchAtLoginController = LaunchAtLoginController()
+    private let updateController = UpdateController(xmindBundleIdentifier: xmindBundleIdentifier)
     private var globalEventMonitor: Any?
     private var xmindInputGeneration = 0
     private var lastXMindInputAt: Date?
@@ -75,6 +76,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         configureStatusItem()
         configureLaunchAtLogin()
+        updateController.start()
 
         do {
             let loaded = try loadConfiguration()
@@ -109,6 +111,9 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let menu = NSMenu()
+        menu.addItem(updateController.availableItem)
+        menu.addItem(updateController.availableSeparator)
+
         statusMenuItem = NSMenuItem(title: "正在启动…", action: nil, keyEquivalent: "")
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
@@ -142,6 +147,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         launchAtLoginMenuItem.target = self
         menu.addItem(launchAtLoginMenuItem)
+
+        menu.addItem(.separator())
+        menu.addItem(updateController.checkNowItem)
+        menu.addItem(updateController.automaticChecksItem)
 
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "退出 XMind 自动保存", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")

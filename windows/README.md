@@ -14,6 +14,7 @@ windows/
 ```bash
 cd windows
 go test ./internal/core/...          # 在任何系统上都能跑
+XMIND_AUTOSAVE_NETWORK_TESTS=1 go test -run GitHub ./internal/core/   # 另外实际查询一次 GitHub
 GOOS=windows GOARCH=amd64 go vet ./...
 ../script/package_windows.sh 1.0.3   # 生成 dist/release/XMindAutoSave-Setup-1.0.3.exe
 ```
@@ -37,6 +38,7 @@ go run ./cmd/xmindautosave --portable
 | 确认保存 | 文件修改时间变化，或标题的未保存标记消失 |
 | 文件开关 | `%APPDATA%\XMindAutoSave\preferences.json`，以卷序列号 + 文件 ID 为键（相当于 macOS 的设备号 + inode），文件被替换时再按路径找回 |
 | 登录启动 | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，首次运行时默认开启，尊重“任务管理器 → 启动应用”中的禁用 |
+| 检查更新 | 启动 30 秒后及此后每天一次，读取 GitHub 最新 Release 的版本号和文件名（`internal/core/update.go`），只有更新且带 `XMindAutoSave-Setup-*.exe` 的版本才提示：通知只弹一次，下载项一直留在菜单顶部。先用 `HTTPS_PROXY` 等环境变量，否则用“设置 → 网络 → 代理”中的手动代理（不支持 PAC 脚本）。开关和已提醒的版本记在 `HKCU\Software\XMindAutoSave`。版本号不是 x.y.z 的构建（`dev`、CI 的 `ci-…`）不检查 |
 | 安装 | 下载的 exe 把自己复制到 `%LOCALAPPDATA%\Programs\XMindAutoSave`，创建开始菜单快捷方式和“设置 → 应用”中的卸载项，全部在当前用户范围内 |
 
 输入监听使用 Raw Input 而不是低级键盘钩子：只记录“有按键 / 有点击”这件事和按键是否为字母，不记录内容，也不会拖慢系统输入。

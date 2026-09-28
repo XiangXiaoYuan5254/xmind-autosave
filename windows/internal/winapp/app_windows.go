@@ -18,8 +18,9 @@ const (
 	wmAppWorkerDone     = wmApp + 3
 	wmAppTray           = wmApp + 4
 
-	timerPoll      = 1
-	timerForceSave = 2
+	timerPoll        = 1
+	timerForceSave   = 2
+	timerUpdateCheck = 3
 
 	eventSystemForeground     = 0x0003
 	eventSystemMoveSizeStart  = 0x000A
@@ -37,6 +38,9 @@ const (
 	commandOpenDataFolder
 	commandDiagnostics
 	commandQuit
+	commandDownloadUpdate
+	commandCheckForUpdates
+	commandAutomaticUpdateChecks
 )
 
 type appOptions struct {
@@ -80,6 +84,9 @@ type App struct {
 	status           string
 	lastLoggedSave   time.Time
 	showWhenInactive bool
+
+	updates      updateState
+	balloonClick func() // what clicking the last notification does
 }
 
 // documentEntry caches which file a window shows, per window title.
@@ -176,15 +183,17 @@ func (a *App) run() int {
 		a.poll(false)
 	}
 	if a.justInstalled {
-		a.tray.notify("XMind 自动保存已安装",
-			"它在后台运行，并会随 Windows 登录自动启动。打开 XMind 文档后，用标题栏旁的“自动保存”开关为当前文件开启。")
+		a.notify("XMind 自动保存已安装",
+			"它在后台运行，并会随 Windows 登录自动启动。打开 XMind 文档后，用标题栏旁的“自动保存”开关为当前文件开启。", nil)
 	}
+	a.startUpdateChecks()
 	runMessageLoop()
 	return 0
 }
 
 func (a *App) quit() {
 	call(procKillTimer, a.hwnd, timerPoll)
+	call(procKillTimer, a.hwnd, timerUpdateCheck)
 	if a.winEventHook != 0 {
 		call(procUnhookWinEvent, a.winEventHook)
 		a.winEventHook = 0
@@ -206,6 +215,8 @@ func (a *App) handleMessage(msg uint32, wParam, lParam uintptr) (uintptr, bool) 
 		case timerForceSave:
 			call(procKillTimer, a.hwnd, timerForceSave)
 			a.poll(true)
+		case timerUpdateCheck:
+			a.updateTimerFired()
 		}
 		return 0, true
 	case wmInput:
@@ -215,6 +226,10 @@ func (a *App) handleMessage(msg uint32, wParam, lParam uintptr) (uintptr, bool) 
 		switch uint32(loword(lParam)) {
 		case wmLButtonUp, wmRButtonUp:
 			a.showMenu()
+		case ninBalloonUserClick:
+			if a.balloonClick != nil {
+				a.balloonClick()
+			}
 		}
 		return 0, true
 	case wmAppWorkerDone:
@@ -224,7 +239,7 @@ func (a *App) handleMessage(msg uint32, wParam, lParam uintptr) (uintptr, bool) 
 		a.quit()
 		return 0, true
 	case wmAppAlreadyRunning:
-		a.tray.notify(appDisplayName, "已经在运行。单击任务栏通知区域中的图标可以查看状态和设置。")
+		a.notify(appDisplayName, "已经在运行。单击任务栏通知区域中的图标可以查看状态和设置。", nil)
 		return 0, true
 	case wmSettingChange:
 		a.dark = systemUsesDarkTheme()
@@ -522,6 +537,13 @@ func (a *App) setStatus(text string) {
 	}
 }
 
+// notify shows a notification next to the tray icon; onClick, if any, runs
+// when the user clicks it.
+func (a *App) notify(title, text string, onClick func()) {
+	a.balloonClick = onClick
+	a.tray.notify(title, text)
+}
+
 func (a *App) showMenu() {
 	documentLine := "当前文件：无本地文档"
 	switch {
@@ -532,8 +554,20 @@ func (a *App) showMenu() {
 	}
 	escape := func(text string) string { return strings.ReplaceAll(text, "&", "&&") }
 
+	var items []menuItem
+	if update := a.updates.available; update != nil {
+		items = append(items,
+			menuItem{id: commandDownloadUpdate, title: "有新版本 " + update.Version.String() + "，前往下载…"},
+			menuItem{separator: true})
+	}
+	checkTitle := "检查更新…"
+	if a.updates.checking {
+		checkTitle = "正在检查更新…"
+	}
+	developmentBuild := a.updates.current == nil
+
 	xmindWindow, currentPath := a.window, a.currentPath
-	command := showPopupMenu(a.hwnd, []menuItem{
+	command := showPopupMenu(a.hwnd, append(items, []menuItem{
 		{title: escape("状态：" + a.status), disabled: true},
 		{title: escape(documentLine), disabled: true},
 		{id: commandToggleCurrent, title: "当前文件自动保存", checked: currentPath != "" && a.currentEnabled, disabled: currentPath == ""},
@@ -543,8 +577,11 @@ func (a *App) showMenu() {
 		{id: commandOpenDataFolder, title: "打开数据文件夹"},
 		{id: commandDiagnostics, title: "生成诊断报告"},
 		{separator: true},
+		{id: commandCheckForUpdates, title: checkTitle, disabled: developmentBuild || a.updates.checking},
+		{id: commandAutomaticUpdateChecks, title: "自动检查更新", checked: a.automaticUpdateChecks(), disabled: developmentBuild},
+		{separator: true},
 		{id: commandQuit, title: "退出 XMind 自动保存"},
-	})
+	}...))
 
 	switch command {
 	case commandToggleCurrent:
@@ -563,6 +600,14 @@ func (a *App) showMenu() {
 		a.writeDiagnostics()
 	case commandQuit:
 		a.quit()
+	case commandDownloadUpdate:
+		if update := a.updates.available; update != nil {
+			shellOpen(update.Page)
+		}
+	case commandCheckForUpdates:
+		a.checkForUpdates(true)
+	case commandAutomaticUpdateChecks:
+		a.setAutomaticUpdateChecks(!a.automaticUpdateChecks())
 	}
 }
 
