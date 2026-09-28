@@ -3,7 +3,7 @@ import Foundation
 import OSLog
 import XMindAutoSaveCore
 
-/// Asks GitHub for the latest release shortly after launch and then once a
+/// Asks the website for the latest release shortly after launch and then once a
 /// day. A newer version is announced once and stays in the menu until it is
 /// installed; downloading and replacing the app is left to the user.
 @MainActor
@@ -103,7 +103,7 @@ final class UpdateController: NSObject, NSMenuItemValidation {
     }
 
     @objc private func openDownloadPage() {
-        NSWorkspace.shared.open(availableUpdate?.pageURL ?? UpdateCheck.latestReleasePage)
+        NSWorkspace.shared.open(availableUpdate?.pageURL ?? UpdateCheck.downloadPage)
     }
 
     /// Checks made from the menu report every outcome; automatic ones only

@@ -52,52 +52,36 @@ public struct AvailableUpdate: Equatable, Sendable {
     public let pageURL: URL
 }
 
-/// Update checks ask GitHub for the latest release. They read only its
-/// version number and file names; nothing is uploaded.
+/// Update checks read latest.json on the website (helloxxy.com), for example
+/// {"version": "1.0.5", "files": ["XMindAutoSave-1.0.5.dmg", "XMindAutoSave-Setup-1.0.5.exe"]}.
+/// They read only its version number and file names; nothing is uploaded.
 public enum UpdateCheck {
-    public static let latestReleaseAPI = URL(string: "https://api.github.com/repos/XiangXiaoYuan5254/xmind-autosave/releases/latest")!
-    public static let latestReleasePage = URL(string: "https://github.com/XiangXiaoYuan5254/xmind-autosave/releases/latest")!
-    private static let releasePagePrefix = "https://github.com/XiangXiaoYuan5254/xmind-autosave/releases/"
+    public static let latestReleaseURL = URL(string: "https://helloxxy.com/works/xmind-autosave/downloads/latest.json")!
+    public static let downloadPage = URL(string: "https://helloxxy.com/works/xmind-autosave/#download")!
 
     private struct LatestRelease: Decodable {
-        struct Asset: Decodable {
-            let name: String
-        }
-
-        let tagName: String
-        let htmlURL: String?
-        let assets: [Asset]?
-
-        private enum CodingKeys: String, CodingKey {
-            case tagName = "tag_name"
-            case htmlURL = "html_url"
-            case assets
-        }
+        let version: String
+        let files: [String]?
     }
 
     public struct UnexpectedResponse: LocalizedError {
         public let errorDescription: String?
     }
 
-    /// Reads GitHub's latest-release response and returns the release when it
-    /// is newer than `currentVersion` and ships a DMG — a Windows-only
-    /// release is not offered here.
+    /// Reads latest.json and returns the release when it is newer than
+    /// `currentVersion` and ships a DMG — a Windows-only release is not
+    /// offered here.
     public static func availableUpdate(inLatestRelease data: Data, currentVersion: AppVersion) throws -> AvailableUpdate? {
         let release = try JSONDecoder().decode(LatestRelease.self, from: data)
-        guard let version = AppVersion(release.tagName) else {
-            throw UnexpectedResponse(errorDescription: "无法识别的版本号“\(release.tagName)”")
+        guard let version = AppVersion(release.version) else {
+            throw UnexpectedResponse(errorDescription: "无法识别的版本号“\(release.version)”")
         }
         guard version > currentVersion,
-              (release.assets ?? []).contains(where: { isMacInstaller($0.name) })
+              (release.files ?? []).contains(where: isMacInstaller)
         else {
             return nil
         }
-
-        var pageURL = latestReleasePage
-        if let htmlURL = release.htmlURL, htmlURL.hasPrefix(releasePagePrefix), let url = URL(string: htmlURL) {
-            pageURL = url
-        }
-        return AvailableUpdate(version: version, pageURL: pageURL)
+        return AvailableUpdate(version: version, pageURL: downloadPage)
     }
 
     /// Matches the DMG that package_release.sh produces.
@@ -109,16 +93,15 @@ public enum UpdateCheck {
     public static func fetchAvailableUpdate(
         currentVersion: AppVersion,
         session: URLSession,
-        url: URL = latestReleaseAPI
+        url: URL = latestReleaseURL
     ) async throws -> AvailableUpdate? {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("XMindAutoSave/\(currentVersion) (macOS)", forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            throw UnexpectedResponse(errorDescription: "GitHub 返回 \(status)")
+            throw UnexpectedResponse(errorDescription: "服务器返回 \(status)")
         }
         return try availableUpdate(inLatestRelease: data, currentVersion: currentVersion)
     }

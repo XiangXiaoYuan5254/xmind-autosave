@@ -64,7 +64,7 @@ func (a *App) setAutomaticUpdateChecks(enabled bool) {
 	}
 }
 
-// checkForUpdates asks GitHub on its own goroutine. userInitiated checks
+// checkForUpdates asks the website on its own goroutine. userInitiated checks
 // report every outcome; automatic ones only announce a new version.
 func (a *App) checkForUpdates(userInitiated bool) {
 	if a.updates.current == nil || a.updates.checking {
@@ -79,7 +79,7 @@ func (a *App) checkForUpdates(userInitiated bool) {
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 		transport.Proxy = systemProxy
 		client := &http.Client{Transport: transport}
-		update, found, err := core.CheckForUpdate(ctx, client, core.LatestReleaseAPI, userAgent, current)
+		update, found, err := core.CheckForUpdate(ctx, client, core.LatestReleaseURL, userAgent, current)
 		a.worker.complete(func() { a.updateChecked(update, found, err, userInitiated) })
 	}()
 }

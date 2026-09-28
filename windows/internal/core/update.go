@@ -10,12 +10,13 @@ import (
 	"strings"
 )
 
-// Update checks ask GitHub for the latest release, like the macOS version.
+// Update checks read latest.json on the website (helloxxy.com), like the
+// macOS version, for example
+// {"version": "1.0.5", "files": ["XMindAutoSave-1.0.5.dmg", "XMindAutoSave-Setup-1.0.5.exe"]}.
 // They read only its version number and file names; nothing is uploaded.
 const (
-	LatestReleaseAPI  = "https://api.github.com/repos/XiangXiaoYuan5254/xmind-autosave/releases/latest"
-	LatestReleasePage = "https://github.com/XiangXiaoYuan5254/xmind-autosave/releases/latest"
-	releasePagePrefix = "https://github.com/XiangXiaoYuan5254/xmind-autosave/releases/"
+	LatestReleaseURL = "https://helloxxy.com/works/xmind-autosave/downloads/latest.json"
+	DownloadPage     = "https://helloxxy.com/works/xmind-autosave/#download"
 )
 
 // Version is a release number such as 1.0.3.
@@ -78,40 +79,33 @@ type Update struct {
 }
 
 type latestRelease struct {
-	TagName string `json:"tag_name"`
-	HTMLURL string `json:"html_url"`
-	Assets  []struct {
-		Name string `json:"name"`
-	} `json:"assets"`
+	Version string   `json:"version"`
+	Files   []string `json:"files"`
 }
 
-// AvailableUpdate reads GitHub's latest-release response and returns the
-// release when it is newer than current and ships a Windows installer — a
-// macOS-only release is not offered here.
+// AvailableUpdate reads latest.json and returns the release when it is newer
+// than current and ships a Windows installer — a macOS-only release is not
+// offered here.
 func AvailableUpdate(response []byte, current Version) (Update, bool, error) {
 	var release latestRelease
 	if err := json.Unmarshal(response, &release); err != nil {
 		return Update{}, false, err
 	}
-	version, ok := ParseVersion(release.TagName)
+	version, ok := ParseVersion(release.Version)
 	if !ok {
-		return Update{}, false, fmt.Errorf("无法识别的版本号 %q", release.TagName)
+		return Update{}, false, fmt.Errorf("无法识别的版本号 %q", release.Version)
 	}
 	if version.Compare(current) <= 0 {
 		return Update{}, false, nil
 	}
 	hasInstaller := false
-	for _, asset := range release.Assets {
-		hasInstaller = hasInstaller || IsWindowsInstaller(asset.Name)
+	for _, file := range release.Files {
+		hasInstaller = hasInstaller || IsWindowsInstaller(file)
 	}
 	if !hasInstaller {
 		return Update{}, false, nil
 	}
-	page := LatestReleasePage
-	if strings.HasPrefix(release.HTMLURL, releasePagePrefix) {
-		page = release.HTMLURL
-	}
-	return Update{Version: version, Page: page}, true, nil
+	return Update{Version: version, Page: DownloadPage}, true, nil
 }
 
 // IsWindowsInstaller matches the file package_windows.sh produces.
@@ -120,14 +114,13 @@ func IsWindowsInstaller(name string) bool {
 	return strings.HasPrefix(lower, "xmindautosave-setup-") && strings.HasSuffix(lower, ".exe")
 }
 
-// CheckForUpdate asks apiURL (LatestReleaseAPI outside tests) for the latest
-// release.
-func CheckForUpdate(ctx context.Context, client *http.Client, apiURL, userAgent string, current Version) (Update, bool, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+// CheckForUpdate reads latestURL (LatestReleaseURL outside tests).
+func CheckForUpdate(ctx context.Context, client *http.Client, latestURL, userAgent string, current Version) (Update, bool, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, latestURL, nil)
 	if err != nil {
 		return Update{}, false, err
 	}
-	request.Header.Set("Accept", "application/vnd.github+json")
+	request.Header.Set("Cache-Control", "no-cache")
 	request.Header.Set("User-Agent", userAgent)
 	response, err := client.Do(request)
 	if err != nil {
@@ -135,7 +128,7 @@ func CheckForUpdate(ctx context.Context, client *http.Client, apiURL, userAgent 
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return Update{}, false, fmt.Errorf("GitHub 返回 %s", response.Status)
+		return Update{}, false, fmt.Errorf("服务器返回 %s", response.Status)
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {

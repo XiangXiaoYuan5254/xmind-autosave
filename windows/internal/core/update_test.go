@@ -48,13 +48,9 @@ func TestVersionCompare(t *testing.T) {
 }
 
 const releaseResponse = `{
-	"tag_name": "v1.0.4",
-	"html_url": "https://github.com/XiangXiaoYuan5254/xmind-autosave/releases/tag/v1.0.4",
-	"assets": [
-		{"name": "SHA256SUMS.txt"},
-		{"name": "XMindAutoSave-1.0.4.dmg"},
-		{"name": "XMindAutoSave-Setup-1.0.4.exe"}
-	]
+	"version": "1.0.4",
+	"date": "2026-09-28",
+	"files": ["XMindAutoSave-1.0.4.dmg", "XMindAutoSave-Setup-1.0.4.exe"]
 }`
 
 func TestAvailableUpdateOffersNewerRelease(t *testing.T) {
@@ -64,7 +60,7 @@ func TestAvailableUpdateOffersNewerRelease(t *testing.T) {
 		t.Fatalf("AvailableUpdate = %v, %v", ok, err)
 	}
 	if update.Version.String() != "1.0.4" ||
-		update.Page != "https://github.com/XiangXiaoYuan5254/xmind-autosave/releases/tag/v1.0.4" {
+		update.Page != "https://helloxxy.com/works/xmind-autosave/#download" {
 		t.Fatalf("update = %+v", update)
 	}
 }
@@ -80,25 +76,15 @@ func TestAvailableUpdateIgnoresSameOrOlderRelease(t *testing.T) {
 
 func TestAvailableUpdateNeedsWindowsInstaller(t *testing.T) {
 	current, _ := ParseVersion("1.0.3")
-	macOnly := `{"tag_name": "v1.0.4", "assets": [{"name": "XMindAutoSave-1.0.4.dmg"}]}`
+	macOnly := `{"version": "1.0.4", "files": ["XMindAutoSave-1.0.4.dmg"]}`
 	if update, ok, err := AvailableUpdate([]byte(macOnly), current); ok || err != nil {
-		t.Fatalf("update = %+v, %v, %v", update, ok, err)
-	}
-}
-
-func TestAvailableUpdateOpensOnlyThisProjectsPages(t *testing.T) {
-	current, _ := ParseVersion("1.0.3")
-	elsewhere := `{"tag_name": "v1.0.4", "html_url": "https://example.com/download",
-		"assets": [{"name": "XMindAutoSave-Setup-1.0.4.exe"}]}`
-	update, ok, err := AvailableUpdate([]byte(elsewhere), current)
-	if err != nil || !ok || update.Page != LatestReleasePage {
 		t.Fatalf("update = %+v, %v, %v", update, ok, err)
 	}
 }
 
 func TestAvailableUpdateRejectsUnknownTag(t *testing.T) {
 	current, _ := ParseVersion("1.0.3")
-	if _, ok, err := AvailableUpdate([]byte(`{"tag_name": "nightly"}`), current); ok || err == nil {
+	if _, ok, err := AvailableUpdate([]byte(`{"version": "nightly"}`), current); ok || err == nil {
 		t.Fatalf("ok = %v, err = %v; want an error", ok, err)
 	}
 }
@@ -133,15 +119,15 @@ func TestCheckForUpdateReportsHTTPErrors(t *testing.T) {
 	}
 }
 
-// Set XMIND_AUTOSAVE_NETWORK_TESTS=1 to also ask the real GitHub API.
-func TestCheckForUpdateAgainstGitHub(t *testing.T) {
+// Set XMIND_AUTOSAVE_NETWORK_TESTS=1 to also read the real latest.json.
+func TestCheckForUpdateAgainstWebsite(t *testing.T) {
 	if os.Getenv("XMIND_AUTOSAVE_NETWORK_TESTS") != "1" {
 		t.Skip("set XMIND_AUTOSAVE_NETWORK_TESTS=1 to run")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	oldest, _ := ParseVersion("0.0.1")
-	update, ok, err := CheckForUpdate(ctx, http.DefaultClient, LatestReleaseAPI, "XMindAutoSave/test", oldest)
+	update, ok, err := CheckForUpdate(ctx, http.DefaultClient, LatestReleaseURL, "XMindAutoSave/test", oldest)
 	if err != nil || !ok {
 		t.Fatalf("CheckForUpdate = %+v, %v, %v", update, ok, err)
 	}

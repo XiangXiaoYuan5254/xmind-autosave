@@ -2,7 +2,7 @@
 
 给 XMind 本地文档补上接近实时的自动保存，并且每个文件都能独立开关。支持 macOS；[Windows 版](#windows-版测试版)正在测试。
 
-[下载最新版](https://github.com/XiangXiaoYuan5254/xmind-autosave/releases/latest)：macOS 选 `XMindAutoSave-*.dmg`，Windows 选 `XMindAutoSave-Setup-*.exe`。
+[下载最新版](https://helloxxy.com/works/xmind-autosave/)：macOS 选 `XMindAutoSave-*.dmg`，Windows 选 `XMindAutoSave-Setup-*.exe`。也可以在 [GitHub Releases](https://github.com/XiangXiaoYuan5254/xmind-autosave/releases/latest) 下载。
 
 ## 它能做什么
 
@@ -13,13 +13,13 @@
 - 自动注册为登录项，也可以从菜单栏随时关闭“登录时自动启动”。
 - XMind 不在前台、进入全屏或演说模式时，悬浮开关自动隐藏。
 
-程序不上传任何内容，也不会扫描磁盘。它只读取 XMind 当前窗口的辅助功能信息，并且只向 XMind 发送 `⌘S`。唯一的联网是[检查更新](#更新)：每天向 GitHub 查询一次最新版本号，可以在菜单中关闭。
+程序不上传任何内容，也不会扫描磁盘。它只读取 XMind 当前窗口的辅助功能信息，并且只向 XMind 发送 `⌘S`。唯一的联网是[检查更新](#更新)：每天向官网 helloxxy.com 查询一次最新版本号，可以在菜单中关闭。
 
 ## 安装（约 1 分钟）
 
 系统要求：macOS 13 或更高版本，支持 Apple 芯片和 Intel Mac。
 
-1. 从 [Releases](https://github.com/XiangXiaoYuan5254/xmind-autosave/releases/latest) 下载 `XMindAutoSave-*.dmg`。
+1. 从[官网](https://helloxxy.com/works/xmind-autosave/#download)下载 `XMindAutoSave-*.dmg`。
 2. 打开 DMG，把 `XMindAutoSave.app` 拖进 `Applications`。
 3. 进入“应用程序”，双击打开 `XMindAutoSave`。系统会提示无法打开，先关闭提示（不要选“移到废纸篓”）。
 4. 打开“系统设置 → 隐私与安全性”，往下滚到“安全性”，找到 `XMindAutoSave` 被阻止的提示，点“仍要打开”，再确认“仍要打开”并输入登录密码。这个按钮只在尝试打开后约一小时内出现，没看到的话先再双击一次 App。
@@ -43,7 +43,7 @@ macOS 14 及更早版本也可以用更快的方法代替第 3、4 步：按住 
 
 ## 更新
 
-程序启动约 30 秒后以及之后每天一次，会向 GitHub 查询最新版本号。它只读取版本号和安装包文件名，不发送你的任何数据。发现新版本时会提醒一次，之后菜单顶部会一直显示“有新版本…，前往下载”。也可以随时点菜单里的“检查更新…”；不想让程序联网，取消勾选“自动检查更新”即可。
+程序启动约 30 秒后以及之后每天一次，会读取官网上的 [`latest.json`](https://helloxxy.com/works/xmind-autosave/downloads/latest.json) 查询最新版本号。它只读取版本号和安装包文件名，不发送你的任何数据。发现新版本时会提醒一次，之后菜单顶部会一直显示“有新版本…，前往下载”。也可以随时点菜单里的“检查更新…”；不想让程序联网，取消勾选“自动检查更新”即可。
 
 macOS 上更新：
 
@@ -52,7 +52,7 @@ macOS 上更新：
 3. 把新版 `XMindAutoSave.app` 拖进 `Applications`，选择“替换”，再按首次安装的第 3、4 步打开并允许它。
 4. 如果更新后自动保存不工作，到“系统设置 → 隐私与安全性 → 辅助功能”中选中 `XMindAutoSave`，点“−”移除，再重新打开程序，按提示授权。安装包没有正式签名，系统会把新版当成另一个程序。
 
-各文件的开关设置会保留。1.0.3 及更早的版本还没有检查更新功能，需要手动下载一次新版，之后就会自动提醒。
+各文件的开关设置会保留。1.0.3 及更早的版本还没有检查更新功能，需要手动下载一次新版，之后就会自动提醒。1.0.4 向 GitHub 查询新版本，更新到 1.0.5 之后改向官网查询。
 
 ## 卸载
 
@@ -68,7 +68,7 @@ macOS 上更新：
 
 系统要求：Windows 10 1809 或更高版本、Windows 11（x64；ARM 设备通过系统自带的 x64 仿真运行）。
 
-1. 从 [Releases](https://github.com/XiangXiaoYuan5254/xmind-autosave/releases/latest) 下载 `XMindAutoSave-Setup-*.exe` 并双击运行。
+1. 从[官网](https://helloxxy.com/works/xmind-autosave/#download)下载 `XMindAutoSave-Setup-*.exe` 并双击运行。
 2. 如果出现“Windows 已保护你的电脑”，点“更多信息 → 仍要运行”。原因和 macOS 相同：当前没有代码签名证书。
 3. 程序会安装到 `%LOCALAPPDATA%\Programs\XMindAutoSave`（不需要管理员权限），在开始菜单添加“XMind 自动保存”，随后在任务栏右下角的通知区域运行（图标可能收在 `^` 里），并随 Windows 登录自动启动。
 4. 打开 XMind 本地文档，通过标题栏旁的“自动保存”开关为当前文件开启。
@@ -99,18 +99,26 @@ swift test
 生成同时支持 Apple 芯片与 Intel 的 DMG：
 
 ```bash
-./script/package_release.sh 1.0.4
+./script/package_release.sh 1.0.5
 ```
 
 产物位于 `dist/release/`，可以直接上传到 GitHub Release。
 
+发布时还要把安装包放到官网 `downloads/`，并更新同目录的 `latest.json`，已安装的程序靠它发现新版本。`files` 只列这个版本实际提供的安装包，没有 DMG 或 Windows 安装程序的版本不会提示对应系统的用户更新：
+
+```json
+{ "version": "1.0.5", "date": "2026-09-28", "files": ["XMindAutoSave-1.0.5.dmg", "XMindAutoSave-Setup-1.0.5.exe"] }
+```
+
+1.0.4 仍向 GitHub 查询最新 Release，所以 GitHub Release 也要照常发布。
+
 Windows 版用 Go 编写，在 macOS 上即可交叉编译（需要 Go 1.22+）：
 
 ```bash
-./script/package_windows.sh 1.0.4
+./script/package_windows.sh 1.0.5
 ```
 
-生成 `dist/release/XMindAutoSave-Setup-1.0.4.exe`。代码结构和调试方法见 [windows/README.md](windows/README.md)。
+生成 `dist/release/XMindAutoSave-Setup-1.0.5.exe`。代码结构和调试方法见 [windows/README.md](windows/README.md)。
 
 ## 兼容性说明
 
