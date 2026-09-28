@@ -33,6 +33,9 @@ const (
 	nifInfo     = 0x10
 	niifInfo    = 0x01
 	niifNoSound = 0x10
+
+	// Sent to the callback message when the user clicks a notification.
+	ninBalloonUserClick = 0x0405 // WM_USER + 5
 )
 
 // trayIcon is the notification-area icon, the Windows counterpart of the

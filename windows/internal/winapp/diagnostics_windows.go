@@ -21,8 +21,11 @@ import (
 const diagnosticsNodeLimit = 300
 
 func (a *App) writeDiagnostics() {
-	snapshot := fmt.Sprintf("状态：%s\r\n当前文件：%s\r\n当前文件自动保存：%v\r\n已安装：%v\r\n登录时自动启动：%v\r\n",
-		a.status, a.currentPath, a.currentEnabled, a.installed, a.launch.enabled())
+	snapshot := fmt.Sprintf("状态：%s\r\n当前文件：%s\r\n当前文件自动保存：%v\r\n已安装：%v\r\n登录时自动启动：%v\r\n自动检查更新：%v\r\n",
+		a.status, a.currentPath, a.currentEnabled, a.installed, a.launch.enabled(), a.automaticUpdateChecks())
+	if update := a.updates.available; update != nil {
+		snapshot += fmt.Sprintf("可用更新：%s（%s）\r\n", update.Version, update.Page)
+	}
 	for hwnd, entry := range a.documents {
 		snapshot += fmt.Sprintf("缓存：窗口 0x%X “%s” → %s（%s，尝试 %d 次）\r\n",
 			hwnd, entry.titleKey, entry.path, entry.method, entry.attempts)
