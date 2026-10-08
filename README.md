@@ -21,18 +21,13 @@
 
 1. 从[官网](https://helloxxy.com/works/xmind-autosave/#download)下载 `XMindAutoSave-*.dmg`。
 2. 打开 DMG，把 `XMindAutoSave.app` 拖进 `Applications`。
-3. 进入“应用程序”，双击打开 `XMindAutoSave`。系统会提示无法打开，先关闭提示（不要选“移到废纸篓”）。
-4. 打开“系统设置 → 隐私与安全性”，往下滚到“安全性”，找到 `XMindAutoSave` 被阻止的提示，点“仍要打开”，再确认“仍要打开”并输入登录密码。这个按钮只在尝试打开后约一小时内出现，没看到的话先再双击一次 App。
-5. 按系统提示，在“系统设置 → 隐私与安全性 → 辅助功能”中允许 `XMindAutoSave`。
-6. 回到 XMind，通过标题栏旁的开关为当前文件开启自动保存。
-
-macOS 14 及更早版本也可以用更快的方法代替第 3、4 步：按住 Control 点击 `XMindAutoSave`，选择“打开”，再确认“打开”。
+3. 进入“应用程序”，双击打开 `XMindAutoSave`。第一次打开时 macOS 会确认一次“这是从互联网下载的 App”，点“打开”。
+4. 按系统提示，在“系统设置 → 隐私与安全性 → 辅助功能”中允许 `XMindAutoSave`。
+5. 回到 XMind，通过标题栏旁的开关为当前文件开启自动保存。
 
 运行后它只显示在 macOS 菜单栏，不会显示 Dock 图标。
 
-### 为什么首次打开需要手动允许？
-
-当前版本没有 Apple Developer 证书，因此不能进行苹果公证。安装包使用 macOS 临时签名并公开全部源码，但 Gatekeeper 仍会拦下第一次打开，需要你手动允许。从 macOS 15 开始，苹果取消了“按住 Control 点击 → 打开”这个捷径，只能在“隐私与安全性”中放行。每次下载新版本后也需要这样允许一次。获得正式开发者签名并完成公证后，这一步可以移除。
+安装包使用 Apple Developer ID 签名，并已通过 Apple 公证，Gatekeeper 不会再拦下第一次打开。签名身份固定以后，更新到新版本也不用重新授权辅助功能；从临时签名的旧版本（2026-10 之前下载的）换过来时需要重新授权一次。
 
 ## 使用
 
@@ -49,8 +44,8 @@ macOS 上更新：
 
 1. 下载新的 `XMindAutoSave-*.dmg`。
 2. 在菜单栏退出 XMind 自动保存。
-3. 把新版 `XMindAutoSave.app` 拖进 `Applications`，选择“替换”，再按首次安装的第 3、4 步打开并允许它。
-4. 如果更新后自动保存不工作，到“系统设置 → 隐私与安全性 → 辅助功能”中选中 `XMindAutoSave`，点“−”移除，再重新打开程序，按提示授权。安装包没有正式签名，系统会把新版当成另一个程序。
+3. 把新版 `XMindAutoSave.app` 拖进 `Applications`，选择“替换”，再打开它。
+4. 如果更新后自动保存不工作，到“系统设置 → 隐私与安全性 → 辅助功能”中选中 `XMindAutoSave`，点“−”移除，再重新打开程序，按提示授权。从临时签名的旧版本换到 Developer ID 签名的版本时，系统会把新版当成另一个程序。
 
 各文件的开关设置会保留。1.0.3 及更早的版本还没有检查更新功能，需要手动下载一次新版，之后就会自动提醒。1.0.4 向 GitHub 查询新版本，更新到 1.0.5 之后改向官网查询。
 
@@ -69,7 +64,7 @@ macOS 上更新：
 系统要求：Windows 10 1809 或更高版本、Windows 11（x64；ARM 设备通过系统自带的 x64 仿真运行）。
 
 1. 从[官网](https://helloxxy.com/works/xmind-autosave/#download)下载 `XMindAutoSave-Setup-*.exe` 并双击运行。
-2. 如果出现“Windows 已保护你的电脑”，点“更多信息 → 仍要运行”。原因和 macOS 相同：当前没有代码签名证书。
+2. 如果出现“Windows 已保护你的电脑”，点“更多信息 → 仍要运行”。Windows 版还没有代码签名证书。
 3. 程序会安装到 `%LOCALAPPDATA%\Programs\XMindAutoSave`（不需要管理员权限），在开始菜单添加“XMind 自动保存”，随后在任务栏右下角的通知区域运行（图标可能收在 `^` 里），并随 Windows 登录自动启动。
 4. 打开 XMind 本地文档，通过标题栏旁的“自动保存”开关为当前文件开启。
 
@@ -102,7 +97,7 @@ swift test
 ./script/package_release.sh 1.0.5
 ```
 
-产物位于 `dist/release/`，可以直接上传到 GitHub Release。
+产物位于 `dist/release/`，可以直接上传到 GitHub Release。脚本用钥匙串里的 Developer ID 证书（`Developer ID Application: Li Ming wang (46AL7LQ9T8)`，`XMIND_SIGN_IDENTITY` 可换成别的）签名并开启 hardened runtime，再把 App 和 DMG 交给 Apple 公证、贴上票据（几分钟，期间别让 Mac 锁屏）。公证用登录钥匙串里名为 `helloxxy-notary` 的凭据（`xcrun notarytool store-credentials` 保存，`XMIND_NOTARY_PROFILE` 可换成别的）。钥匙串里没有这张证书时退回临时签名、跳过公证，只适合自己用。
 
 发布时还要把安装包放到官网 `downloads/`，并更新同目录的 `latest.json`，已安装的程序靠它发现新版本。`files` 只列这个版本实际提供的安装包，没有 DMG 或 Windows 安装程序的版本不会提示对应系统的用户更新：
 

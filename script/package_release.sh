@@ -23,6 +23,30 @@ DMG_STAGING="$RELEASE_DIR/dmg-staging"
 DMG_PATH="$RELEASE_DIR/$APP_NAME-$VERSION.dmg"
 ZIP_PATH="$RELEASE_DIR/$APP_NAME-$VERSION.zip"
 CHECKSUM_PATH="$RELEASE_DIR/SHA256SUMS.txt"
+# 发布版用 Developer ID 证书签名，再交给 Apple 公证；钥匙串里没有这张证书时退回临时签名、跳过公证，只适合自己用。
+DEVELOPER_ID="Developer ID Application: Li Ming wang (46AL7LQ9T8)"
+SIGN_IDENTITY="${XMIND_SIGN_IDENTITY:-}"
+if [[ -z "$SIGN_IDENTITY" ]]; then
+  if security find-identity -v -p codesigning | grep -qF "\"$DEVELOPER_ID\""; then
+    SIGN_IDENTITY="$DEVELOPER_ID"
+  else
+    SIGN_IDENTITY="-"
+  fi
+fi
+# 公证凭据：xcrun notarytool store-credentials helloxxy-notary（存在登录钥匙串里）
+NOTARY_PROFILE="${XMIND_NOTARY_PROFILE:-helloxxy-notary}"
+
+# notarize <要上传的文件> <贴票据的文件>：交给 Apple 公证（几分钟，期间别让 Mac 锁屏，否则读不到凭据）
+notarize() {
+  local result
+  result="$(xcrun notarytool submit "$1" --keychain-profile "$NOTARY_PROFILE" --wait --output-format json)"
+  if [[ "$(plutil -extract status raw -o - - <<<"$result")" != "Accepted" ]]; then
+    echo "公证没有通过：$result" >&2
+    echo "查看原因：xcrun notarytool log <id> --keychain-profile $NOTARY_PROFILE" >&2
+    exit 1
+  fi
+  xcrun stapler staple -q "$2"
+}
 
 cd "$ROOT_DIR"
 swift test
@@ -70,8 +94,25 @@ cat >"$APP_CONTENTS/Info.plist" <<PLIST
 PLIST
 
 plutil -lint "$APP_CONTENTS/Info.plist" >/dev/null
-codesign --force --deep --options runtime --sign - "$APP_BUNDLE" >/dev/null
+if [[ "$SIGN_IDENTITY" == "-" ]]; then
+  echo "提示：钥匙串里没有 $DEVELOPER_ID，使用临时签名、不公证，下载的用户首次打开会被 Gatekeeper 拦下。" >&2
+  codesign --force --options runtime --sign - "$APP_BUNDLE" >/dev/null
+else
+  codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP_BUNDLE" >/dev/null
+fi
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+
+if [[ "$SIGN_IDENTITY" != "-" ]]; then
+  # 票据贴进 App 本身，DMG 和 zip 里的都带着它
+  ditto -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
+  notarize "$ZIP_PATH" "$APP_BUNDLE"
+  rm -f "$ZIP_PATH"
+  # 打包用的 Mac 可能关掉了 Gatekeeper，那样 spctl 什么都放行，所以只认来源是否为已公证的 Developer ID
+  spctl -a -vv -t exec "$APP_BUNDLE" 2>&1 | grep -q "source=Notarized Developer ID" || {
+    echo "$APP_BUNDLE 没有公证上" >&2
+    exit 1
+  }
+fi
 
 cp -R "$APP_BUNDLE" "$DMG_STAGING/$APP_NAME.app"
 ln -s /Applications "$DMG_STAGING/Applications"
@@ -83,6 +124,10 @@ hdiutil create \
   -ov \
   -format UDZO \
   "$DMG_PATH" >/dev/null
+if [[ "$SIGN_IDENTITY" != "-" ]]; then
+  codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG_PATH"
+  notarize "$DMG_PATH" "$DMG_PATH"
+fi
 
 ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" "$ZIP_PATH"
 (
