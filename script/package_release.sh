@@ -12,6 +12,8 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 2
 fi
 
+command -v uvx >/dev/null || { echo "生成 DMG 需要 uv，先运行 brew install uv。" >&2; exit 1; }
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RELEASE_DIR="$ROOT_DIR/dist/release"
 APP_BUNDLE="$RELEASE_DIR/$APP_NAME.app"
@@ -114,16 +116,19 @@ if [[ "$SIGN_IDENTITY" != "-" ]]; then
   }
 fi
 
-cp -R "$APP_BUNDLE" "$DMG_STAGING/$APP_NAME.app"
-ln -s /Applications "$DMG_STAGING/Applications"
 cp "$ROOT_DIR/INSTALL.md" "$DMG_STAGING/安装说明.md"
 
-hdiutil create \
-  -volname "$DISPLAY_NAME" \
-  -srcfolder "$DMG_STAGING" \
-  -ov \
-  -format UDZO \
-  "$DMG_PATH" >/dev/null
+# 生成 DMG：和页间的安装包一样，打开后是一个带箭头的窗口，提示把 App 拖进「应用程序」（布局见 script/dmg/）。
+# dmgbuild 由 uv 临时运行；要用 1.6.7 或更新的版本，更早的版本会多写一个背景图书签，Finder 就不显示背景了。
+DMG_WORK_DIR="$ROOT_DIR/.build/dmg"
+swift "$ROOT_DIR/script/dmg/background.swift" "$DMG_WORK_DIR"
+rm -f "$DMG_PATH"
+uvx --python 3.12 --from dmgbuild==1.6.7 dmgbuild -s "$ROOT_DIR/script/dmg/settings.py" \
+  -D app="$APP_BUNDLE" \
+  -D readme="$DMG_STAGING/安装说明.md" \
+  -D background="$DMG_WORK_DIR/background.png" \
+  -D icon="$APP_RESOURCES/AppIcon.icns" \
+  "$DISPLAY_NAME" "$DMG_PATH" >/dev/null
 if [[ "$SIGN_IDENTITY" != "-" ]]; then
   codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG_PATH"
   notarize "$DMG_PATH" "$DMG_PATH"

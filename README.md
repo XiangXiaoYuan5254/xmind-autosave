@@ -97,7 +97,7 @@ swift test
 ./script/package_release.sh 1.0.5
 ```
 
-产物位于 `dist/release/`，可以直接上传到 GitHub Release。脚本用钥匙串里的 Developer ID 证书（`Developer ID Application: Li Ming wang (46AL7LQ9T8)`，`XMIND_SIGN_IDENTITY` 可换成别的）签名并开启 hardened runtime，再把 App 和 DMG 交给 Apple 公证、贴上票据（几分钟，期间别让 Mac 锁屏）。公证用登录钥匙串里名为 `helloxxy-notary` 的凭据（`xcrun notarytool store-credentials` 保存，`XMIND_NOTARY_PROFILE` 可换成别的）。钥匙串里没有这张证书时退回临时签名、跳过公证，只适合自己用。
+产物位于 `dist/release/`，可以直接上传到 GitHub Release。DMG 打开后是一个带箭头的窗口，提示把 App 拖进「应用程序」，和页间的安装包一样（布局见 `script/dmg/`）；它用 [dmgbuild](https://github.com/dmgbuild/dmgbuild) 生成，需要先 `brew install uv`。脚本用钥匙串里的 Developer ID 证书（`Developer ID Application: Li Ming wang (46AL7LQ9T8)`，`XMIND_SIGN_IDENTITY` 可换成别的）签名并开启 hardened runtime，再把 App 和 DMG 交给 Apple 公证、贴上票据（几分钟，期间别让 Mac 锁屏）。公证用登录钥匙串里名为 `helloxxy-notary` 的凭据（`xcrun notarytool store-credentials` 保存，`XMIND_NOTARY_PROFILE` 可换成别的）。钥匙串里没有这张证书时退回临时签名、跳过公证，只适合自己用。
 
 发布时还要把安装包放到官网 `downloads/`，并更新同目录的 `latest.json`，已安装的程序靠它发现新版本。`files` 只列这个版本实际提供的安装包，没有 DMG 或 Windows 安装程序的版本不会提示对应系统的用户更新：
 
