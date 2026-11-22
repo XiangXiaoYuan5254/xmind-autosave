@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public struct FileAutoSavePreference: Codable, Sendable, Equatable {
@@ -63,10 +64,11 @@ public final class PerFileAutoSaveStore {
 
     public static func preferenceKey(forPath rawPath: String) -> String {
         let normalizedPath = XMindDocumentInspector.normalizedPath(rawPath)
-        if let attributes = try? FileManager.default.attributesOfItem(atPath: normalizedPath),
-           let device = attributes[.systemNumber] as? NSNumber,
-           let inode = attributes[.systemFileNumber] as? NSNumber {
-            return "file:\(device.uint64Value):\(inode.uint64Value)"
+        var fileStat = stat()
+        if normalizedPath.withCString({ stat($0, &fileStat) == 0 }) {
+            let device = UInt64(UInt32(bitPattern: fileStat.st_dev))
+            let inode = UInt64(fileStat.st_ino)
+            return "file:\(device):\(inode)"
         }
         return "path:\(normalizedPath)"
     }

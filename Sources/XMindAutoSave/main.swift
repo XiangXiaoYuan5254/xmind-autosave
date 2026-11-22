@@ -1,6 +1,8 @@
 import AppKit
 import ApplicationServices
+import Carbon
 import CoreGraphics
+import Darwin
 import Foundation
 import OSLog
 import XMindAutoSaveCore
@@ -33,22 +35,17 @@ private func handleMaintenanceCommand() -> Bool {
 private let xmindBundleIdentifier = "net.xmind.vana.app"
 private let logger = Logger(subsystem: "local.xmind.autosave", category: "autosave")
 private let showOverlayWhenInactive = ProcessInfo.processInfo.environment["XMIND_AUTOSAVE_SHOW_WHEN_INACTIVE"] == "1"
+private let injectedEventUserData: Int64 = 0x584D4153 // "XMAS"
 
 private struct ScanResult {
     let filePath: String
     let isDirty: Bool
     let windowFrame: CGRect
     let isFullScreen: Bool
+    let isEditingText: Bool
+    let hasMarkedText: Bool
+    let isInMenuOrSheet: Bool
     let activitySignature: String
-}
-
-private struct SaveState {
-    var dirtySince: Date?
-    var lastEditActivityAt: Date?
-    var observedInputGeneration = -1
-    var observedActivitySignature: String?
-    var lastAttempt: Date?
-    var lastSuccessfulSave: Date?
 }
 
 @MainActor
@@ -61,16 +58,22 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var timer: Timer?
     private var configuration: AutoSaveConfiguration?
     private var autoSaveStore: PerFileAutoSaveStore?
+    private var scheduler: AutoSaveScheduler?
     private var overlayPanel: AttachedTogglePanel?
     private var activeFilePath: String?
-    private var saveStates: [String: SaveState] = [:]
     private var didRequestAccessibility = false
+    private var wasAccessibilityTrusted = false
     private var lastStatusText = ""
+    private var lastLoggedSaveDate: Date?
     private let launchAtLoginController = LaunchAtLoginController()
     private let updateController = UpdateController(xmindBundleIdentifier: xmindBundleIdentifier)
     private var globalEventMonitor: Any?
     private var xmindInputGeneration = 0
+    private var xmindKeyboardGeneration = 0
     private var lastXMindInputAt: Date?
+    private var letterSinceCommit = false
+    private var wasEditingText = false
+    private var pidPathCache: [pid_t: String] = [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -81,6 +84,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             let loaded = try loadConfiguration()
             configuration = loaded
+            scheduler = AutoSaveScheduler(configuration: loaded)
             autoSaveStore = makePreferenceStore(initiallyEnabledPaths: loaded.monitoredFiles)
             overlayPanel = AttachedTogglePanel { [weak self] filePath, enabled in
                 self?.setAutoSave(enabled, for: filePath)
@@ -96,10 +100,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         timer?.invalidate()
-        if let globalEventMonitor {
-            NSEvent.removeMonitor(globalEventMonitor)
-            self.globalEventMonitor = nil
-        }
+        removeInputActivityMonitor()
         overlayPanel?.hide()
     }
 
@@ -238,7 +239,10 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startMonitoring() {
         guard let configuration else { return }
-        installInputActivityMonitor()
+        if AXIsProcessTrusted() {
+            wasAccessibilityTrusted = true
+            installInputActivityMonitor()
+        }
         let interval = max(Double(configuration.pollIntervalMilliseconds) / 1_000.0, 0.1)
         timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -250,19 +254,93 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func installInputActivityMonitor() {
-        guard globalEventMonitor == nil else { return }
+        removeInputActivityMonitor()
 
-        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { [weak self] _ in
+        let mask: NSEvent.EventTypeMask = [
+            .keyDown,
+            .keyUp,
+            .flagsChanged,
+            .leftMouseDown,
+            .leftMouseDragged,
+            .leftMouseUp,
+            .rightMouseDown
+        ]
+
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
+            if event.cgEvent?.getIntegerValueField(.eventSourceUserData) == injectedEventUserData {
+                return
+            }
             guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier == xmindBundleIdentifier else {
                 return
             }
 
-            Task { @MainActor [weak self] in
+            let handleEvent = { @MainActor [weak self] in
                 guard let self else { return }
-                self.xmindInputGeneration &+= 1
-                self.lastXMindInputAt = Date()
+                self.recordXMindEvent(event)
+            }
+
+            if Thread.isMainThread {
+                MainActor.assumeIsolated {
+                    handleEvent()
+                }
+            } else {
+                Task { @MainActor in
+                    handleEvent()
+                }
             }
         }
+    }
+
+    private func removeInputActivityMonitor() {
+        if let globalEventMonitor {
+            NSEvent.removeMonitor(globalEventMonitor)
+            self.globalEventMonitor = nil
+        }
+    }
+
+    private func recordXMindEvent(_ event: NSEvent) {
+        let now = Date()
+        xmindInputGeneration &+= 1
+        lastXMindInputAt = now
+
+        switch event.type {
+        case .keyDown:
+            xmindKeyboardGeneration &+= 1
+            let modifiers = event.modifierFlags.intersection([.command, .control, .option])
+            if !modifiers.isEmpty {
+                letterSinceCommit = false
+            } else if isCommitOrCancelKey(event.keyCode) {
+                letterSinceCommit = false
+            } else if isLetterOrPinyinKey(event) {
+                letterSinceCommit = true
+            }
+        case .leftMouseDown, .leftMouseUp, .rightMouseDown:
+            letterSinceCommit = false
+        default:
+            break
+        }
+    }
+
+    private func isCommitOrCancelKey(_ keyCode: UInt16) -> Bool {
+        switch keyCode {
+        case 36, 76, 53, 49, 48: // Return, Enter, Escape, Space, Tab
+            return true
+        case 18, 19, 20, 21, 23, 22, 26, 28, 25: // Top-row 1-9 (IME candidate selection)
+            return true
+        case 83, 84, 85, 86, 87, 88, 89, 91, 92: // Numpad 1-9
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func isLetterOrPinyinKey(_ event: NSEvent) -> Bool {
+        guard let chars = event.charactersIgnoringModifiers, let scalar = chars.unicodeScalars.first, chars.unicodeScalars.count == 1 else {
+            return false
+        }
+        return (scalar.value >= 65 && scalar.value <= 90)
+            || (scalar.value >= 97 && scalar.value <= 122)
+            || scalar == "'"
     }
 
     @objc private func checkNow() {
@@ -294,7 +372,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
                 updateStatus("当前文件已开启自动保存", symbol: "checkmark.circle.fill")
                 poll()
             } else {
-                saveStates[filePath] = nil
+                scheduler?.forget(filePath: filePath)
                 updateStatus("当前文件自动保存已关闭", symbol: "pause.circle")
             }
         } catch {
@@ -312,12 +390,21 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func poll(forceSave: Bool = false) {
-        guard let configuration, let autoSaveStore else { return }
+        guard let configuration, let autoSaveStore, scheduler != nil else { return }
 
         guard AXIsProcessTrusted() else {
+            if wasAccessibilityTrusted || globalEventMonitor != nil {
+                wasAccessibilityTrusted = false
+                removeInputActivityMonitor()
+            }
             clearCurrentDocumentUI()
             updateStatus("需要辅助功能权限", symbol: "lock.trianglebadge.exclamationmark")
             return
+        }
+
+        if !wasAccessibilityTrusted || globalEventMonitor == nil {
+            wasAccessibilityTrusted = true
+            installInputActivityMonitor()
         }
 
         guard let xmind = NSWorkspace.shared.runningApplications.first(where: {
@@ -351,70 +438,83 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             overlayPanel?.hide()
         }
 
-        guard enabled else {
-            saveStates[scan.filePath] = nil
-            updateStatus("当前文件自动保存已关闭", symbol: "pause.circle")
-            return
+        if !xmindIsFrontmost || (wasEditingText && !scan.isEditingText) {
+            letterSinceCommit = false
+        }
+        wasEditingText = scan.isEditingText
+
+        // Sample hardware HID idle clocks AFTER scanning the AX tree so any keystroke
+        // that landed during the AX walk is immediately visible before deciding to save.
+        let now = Date()
+        let hidInputIdle: TimeInterval? = xmindIsFrontmost ? secondsSinceLastHIDInput() : nil
+        let hidKeyIdle: TimeInterval? = xmindIsFrontmost ? secondsSinceLastHIDKeyEvent() : nil
+        let isUserBusy = scan.isInMenuOrSheet || (xmindIsFrontmost && isHardwareInputHeld())
+        let isComposingText: Bool
+        if xmindIsFrontmost {
+            let candidateWindowVisible = hasVisibleIMECandidateWindow(recentHIDInputSeconds: hidInputIdle ?? .infinity)
+            let nativeIMELetterPending = letterSinceCommit && isIMEInputModeActive() && (hidKeyIdle ?? .infinity) < 6.0
+            isComposingText = scan.hasMarkedText || candidateWindowVisible || nativeIMELetterPending
+        } else {
+            isComposingText = false
         }
 
-        var state = saveStates[scan.filePath] ?? SaveState()
-        let now = Date()
+        let observation = AutoSaveObservation(
+            now: now,
+            filePath: scan.filePath,
+            isEnabled: enabled,
+            isDirty: scan.isDirty,
+            isFrontmost: xmindIsFrontmost,
+            isEditingText: scan.isEditingText,
+            isComposingText: isComposingText,
+            isUserBusy: isUserBusy,
+            lastInputAt: lastXMindInputAt,
+            inputGeneration: xmindInputGeneration,
+            keyboardInputGeneration: xmindKeyboardGeneration,
+            secondsSinceLastFrontmostHIDInput: hidInputIdle,
+            secondsSinceLastFrontmostKeyEvent: hidKeyIdle,
+            activitySignature: scan.activitySignature,
+            forceSave: forceSave
+        )
 
-        guard scan.isDirty else {
-            let justSaved = state.lastAttempt != nil && state.dirtySince != nil
-            state.dirtySince = nil
-            state.lastEditActivityAt = nil
-            state.observedInputGeneration = xmindInputGeneration
-            state.observedActivitySignature = scan.activitySignature
-            state.lastAttempt = nil
-            if justSaved {
-                state.lastSuccessfulSave = now
+        guard var activeScheduler = scheduler else { return }
+        let decision = activeScheduler.evaluate(observation)
+
+        if decision.shouldSave {
+            if !forceSave && xmindIsFrontmost && (isHardwareInputHeld() || secondsSinceLastHIDInput() < 0.25) {
+                updateStatus("正在输入…", symbol: "pencil.circle")
+                return
+            }
+            postCommandS(to: xmind.processIdentifier)
+        }
+        scheduler = activeScheduler
+
+        switch decision.status {
+        case .disabled:
+            updateStatus("当前文件自动保存已关闭", symbol: "pause.circle")
+        case .saved:
+            updateStatus("已保存", symbol: "checkmark.circle")
+        case .autoSaved(let savedAt):
+            if lastLoggedSaveDate != savedAt {
+                lastLoggedSaveDate = savedAt
                 logger.info("Saved \(scan.filePath, privacy: .private)")
             }
-            saveStates[scan.filePath] = state
-
-            if let savedAt = state.lastSuccessfulSave {
-                updateStatus("已自动保存 \(savedAt.formatted(date: .omitted, time: .standard))", symbol: "checkmark.circle.fill")
-            } else {
-                updateStatus("已保存", symbol: "checkmark.circle")
-            }
-            return
-        }
-
-        if state.dirtySince == nil {
-            state.dirtySince = now
-        }
-
-        if state.observedInputGeneration < 0 {
-            state.observedInputGeneration = xmindInputGeneration
-        } else if state.observedInputGeneration != xmindInputGeneration {
-            state.observedInputGeneration = xmindInputGeneration
-            state.lastEditActivityAt = lastXMindInputAt ?? now
-        }
-
-        if state.observedActivitySignature != scan.activitySignature {
-            state.observedActivitySignature = scan.activitySignature
-            state.lastEditActivityAt = now
-        }
-
-        if state.lastEditActivityAt == nil {
-            state.lastEditActivityAt = state.dirtySince ?? now
-        }
-
-        let delay = max(Double(configuration.saveDelayMilliseconds) / 1_000.0, 0)
-        let retry = max(Double(configuration.retryMilliseconds) / 1_000.0, 0.5)
-        let dirtyLongEnough = now.timeIntervalSince(state.lastEditActivityAt ?? now) >= delay
-        let mayRetry = state.lastAttempt.map { now.timeIntervalSince($0) >= retry } ?? true
-
-        if forceSave || (dirtyLongEnough && mayRetry) {
-            postCommandS(to: xmind.processIdentifier)
-            state.lastAttempt = now
+            updateStatus("已自动保存 \(savedAt.formatted(date: .omitted, time: .standard))", symbol: "checkmark.circle.fill")
+        case .saving:
             updateStatus("正在自动保存…", symbol: "arrow.triangle.2.circlepath")
-        } else {
-            updateStatus("检测到编辑…", symbol: "pencil.circle")
+        case .editing(let reason):
+            switch reason {
+            case .composingIME:
+                updateStatus("正在输入（输入法）…", symbol: "pencil.circle")
+            case .editingText:
+                updateStatus("正在编辑文字…", symbol: "pencil.circle")
+            case .typingBurst:
+                updateStatus("正在连续输入…", symbol: "pencil.circle")
+            case .userBusy:
+                updateStatus("等待操作完成…", symbol: "pencil.circle")
+            case .recentActivity:
+                updateStatus("检测到编辑…", symbol: "pencil.circle")
+            }
         }
-
-        saveStates[scan.filePath] = state
     }
 
     private func scanFocusedDocument(pid: pid_t, configuration: AutoSaveConfiguration) -> ScanResult? {
@@ -437,6 +537,50 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let windowFrame = CGRect(origin: windowPosition, size: windowSize)
         let isFullScreen = copyBoolAttribute(focusedWindow, "AXFullScreen" as CFString) ?? false
+
+        var isEditingText = false
+        var hasMarkedText = false
+        var isInMenuOrSheet = !copyElementArrayAttribute(focusedWindow, "AXSheets" as CFString).isEmpty
+        var focusedSignatureParts = [String]()
+
+        if let focusedElement = copyElementAttribute(application, kAXFocusedUIElementAttribute as CFString)
+            ?? copyElementAttribute(focusedWindow, kAXFocusedUIElementAttribute as CFString) {
+            let role = copyStringAttribute(focusedElement, kAXRoleAttribute as CFString)
+            let subrole = copyStringAttribute(focusedElement, kAXSubroleAttribute as CFString)
+            let valueSettable = isAttributeSettable(focusedElement, kAXValueAttribute as CFString)
+            let isEditable = copyBoolAttribute(focusedElement, "AXEditable" as CFString) ?? false
+            let elementSize = copySizeAttribute(focusedElement, kAXSizeAttribute as CFString)
+            let selectedRange = copyRangeAttribute(focusedElement, kAXSelectedTextRangeAttribute as CFString)
+            let markedRange = copyRangeAttribute(focusedElement, "AXMarkedTextRange" as CFString)
+
+            hasMarkedText = (markedRange?.length ?? 0) > 0
+            isEditingText = XMindDocumentInspector.isTextEditingElement(
+                role: role,
+                subrole: subrole,
+                isValueSettable: valueSettable,
+                isEditable: isEditable,
+                hasSelectedTextRange: selectedRange != nil,
+                hasMarkedText: hasMarkedText,
+                size: elementSize
+            )
+            if XMindDocumentInspector.isMenuOrModalRole(role) {
+                isInMenuOrSheet = true
+            }
+            if isEditingText {
+                if let role {
+                    focusedSignatureParts.append("role:\(role)")
+                }
+                if let focusedValue = copyStringAttribute(focusedElement, kAXValueAttribute as CFString) {
+                    focusedSignatureParts.append("val:\(focusedValue)")
+                }
+                if let selectedRange {
+                    focusedSignatureParts.append("sel:\(selectedRange.location):\(selectedRange.length)")
+                }
+                if let markedRange, markedRange.length > 0 {
+                    focusedSignatureParts.append("mark:\(markedRange.location):\(markedRange.length)")
+                }
+            }
+        }
 
         var stack = [focusedWindow]
         var visited = 0
@@ -465,7 +609,11 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard let matchedPath else { return nil }
-        let activitySignature = accumulatedTexts.joined(separator: "\u{1F}")
+        var signatureComponents = accumulatedTexts
+        if !focusedSignatureParts.isEmpty {
+            signatureComponents.append(contentsOf: focusedSignatureParts)
+        }
+        let activitySignature = signatureComponents.joined(separator: "\u{1F}")
         return ScanResult(
             filePath: matchedPath,
             isDirty: XMindDocumentInspector.isDirty(
@@ -474,8 +622,120 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             ),
             windowFrame: windowFrame,
             isFullScreen: isFullScreen,
+            isEditingText: isEditingText,
+            hasMarkedText: hasMarkedText,
+            isInMenuOrSheet: isInMenuOrSheet,
             activitySignature: activitySignature
         )
+    }
+
+    private func secondsSinceLastHIDInput() -> TimeInterval {
+        let eventTypes: [CGEventType] = [
+            .keyDown,
+            .keyUp,
+            .flagsChanged,
+            .leftMouseDown,
+            .leftMouseDragged,
+            .leftMouseUp,
+            .rightMouseDown,
+            .rightMouseUp
+        ]
+        return eventTypes.reduce(TimeInterval.infinity) { minimum, eventType in
+            let elapsed = CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: eventType)
+            return min(minimum, elapsed)
+        }
+    }
+
+    private func secondsSinceLastHIDKeyEvent() -> TimeInterval {
+        let eventTypes: [CGEventType] = [.keyDown, .keyUp, .flagsChanged]
+        return eventTypes.reduce(TimeInterval.infinity) { minimum, eventType in
+            let elapsed = CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: eventType)
+            return min(minimum, elapsed)
+        }
+    }
+
+    private func isHardwareInputHeld() -> Bool {
+        let heldModifiers: CGEventFlags = [.maskShift, .maskControl, .maskAlternate, .maskCommand]
+        let flags = CGEventSource.flagsState(.hidSystemState)
+        if !flags.intersection(heldModifiers).isEmpty {
+            return true
+        }
+        return NSEvent.pressedMouseButtons != 0
+    }
+
+    private func isIMEInputModeActive() -> Bool {
+        guard
+            let source = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue(),
+            let rawType = TISGetInputSourceProperty(source, kTISPropertyInputSourceType)
+        else {
+            return false
+        }
+        let type = Unmanaged<CFString>.fromOpaque(rawType).takeUnretainedValue() as String
+        return type == (kTISTypeKeyboardInputMode as String)
+    }
+
+    private func hasVisibleIMECandidateWindow(recentHIDInputSeconds: TimeInterval) -> Bool {
+        // Guard against third-party IMEs that keep a permanent floating status bar on screen.
+        guard recentHIDInputSeconds < 12.0 else { return false }
+
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+            return false
+        }
+
+        let statusBarLevel = Int(CGWindowLevelForKey(.statusWindow))
+        for window in windowList {
+            guard
+                let layer = window[kCGWindowLayer as String] as? Int,
+                layer > 0,
+                layer != statusBarLevel,
+                let pid = window[kCGWindowOwnerPID as String] as? pid_t
+            else {
+                continue
+            }
+
+            if let alpha = window[kCGWindowAlpha as String] as? Double, alpha <= 0.05 {
+                continue
+            }
+
+            if let boundsDict = window[kCGWindowBounds as String] as? NSDictionary,
+               let bounds = CGRect(dictionaryRepresentation: boundsDict) {
+                if bounds.width < 20 || bounds.height < 16 {
+                    continue
+                }
+                if bounds.minY < 40 && bounds.height <= 40 {
+                    continue
+                }
+            }
+
+            if let path = executablePath(for: pid), path.contains("/Input Methods/") {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func executablePath(for pid: pid_t) -> String? {
+        if let cached = pidPathCache[pid] {
+            return cached.isEmpty ? nil : cached
+        }
+        if pidPathCache.count > 128 {
+            pidPathCache.removeAll(keepingCapacity: true)
+        }
+
+        var buffer = [CChar](repeating: 0, count: 4096)
+        let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+        guard length > 0 else {
+            pidPathCache[pid] = ""
+            return nil
+        }
+
+        let path = buffer.withUnsafeBufferPointer { pointer -> String in
+            guard let baseAddress = pointer.baseAddress else { return "" }
+            return String(cString: baseAddress)
+        }
+        pidPathCache[pid] = path
+        return path.isEmpty ? nil : path
     }
 
     private func postCommandS(to pid: pid_t) {
@@ -492,6 +752,8 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
+        keyDown.setIntegerValueField(.eventSourceUserData, value: injectedEventUserData)
+        keyUp.setIntegerValueField(.eventSourceUserData, value: injectedEventUserData)
         keyDown.postToPid(pid)
         keyUp.postToPid(pid)
     }
@@ -606,14 +868,44 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func copyChildren(_ element: AXUIElement) -> [AXUIElement] {
+        copyElementArrayAttribute(element, kAXChildrenAttribute as CFString)
+    }
+
+    private func copyElementArrayAttribute(_ element: AXUIElement, _ attribute: CFString) -> [AXUIElement] {
         var rawValue: CFTypeRef?
         guard
-            AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &rawValue) == .success,
+            AXUIElementCopyAttributeValue(element, attribute, &rawValue) == .success,
             let children = rawValue as? [AXUIElement]
         else {
             return []
         }
         return children
+    }
+
+    private func copyRangeAttribute(_ element: AXUIElement, _ attribute: CFString) -> CFRange? {
+        var rawValue: CFTypeRef?
+        guard
+            AXUIElementCopyAttributeValue(element, attribute, &rawValue) == .success,
+            let rawValue,
+            CFGetTypeID(rawValue) == AXValueGetTypeID()
+        else {
+            return nil
+        }
+
+        let axValue = unsafeDowncast(rawValue, to: AXValue.self)
+        var range = CFRange(location: 0, length: 0)
+        guard AXValueGetType(axValue) == .cfRange, AXValueGetValue(axValue, .cfRange, &range) else {
+            return nil
+        }
+        return range
+    }
+
+    private func isAttributeSettable(_ element: AXUIElement, _ attribute: CFString) -> Bool {
+        var settable = DarwinBoolean(false)
+        guard AXUIElementIsAttributeSettable(element, attribute, &settable) == .success else {
+            return false
+        }
+        return settable.boolValue
     }
 }
 
